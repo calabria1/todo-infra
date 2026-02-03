@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'infra/**'
+      - 'todo-infra/infra/**'
       - 'services/**'
       - '.github/workflows/deploy.yml'
 
