@@ -8,7 +8,7 @@ Provisiona a infra inteira na AWS:
 - IAM (role/policy para lambda)
 - CloudWatch Logs (via AWS padrão)
 
-> Você vai preencher alguns valores (bucket names/estado/backend) e depois rodar via GitHub Actions.
+> Você vai preencher alguns valores (bucket names/estado/backend) e depois rdodar via GitHub Actions.
 
 ## Pré-requisitos
 - Terraform 1.6+
