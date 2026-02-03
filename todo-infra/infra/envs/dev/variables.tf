@@ -1,12 +1,24 @@
-variable "project" { type = string }
-variable "env" { type = string }
-variable "aws_region" { type = string }
+variable "project" {
+  type        = string
+  description = "Nome do projeto"
+}
 
-# Artefatos (zip da lambda)
-variable "artifacts_bucket" { type = string }
+variable "env" {
+  type        = string
+  description = "Ambiente (dev, hom, prod)"
+}
 
-# Passado pelo pipeline (ex: commit SHA)
-variable "lambda_artifact_version" { type = string }
+variable "aws_region" {
+  type        = string
+  description = "Regiao AWS"
+}
 
-# Repo da API para clonar no workflow (owner/repo)
-variable "api_repo" { type = string }
+variable "artifacts_bucket" {
+  type        = string
+  description = "Bucket S3 para artefatos (zip da lambda)"
+}
+
+variable "lambda_artifact_version" {
+  type        = string
+  description = "Versao do artefato da Lambda (commit SHA ou tag)"
+}

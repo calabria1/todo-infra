@@ -60,8 +60,8 @@ resource "aws_lambda_function" "this" {
     variables = var.env_vars
   }
 
-  timeout     = 10
-  memory_size = 256
+  timeout     = var.timeout
+  memory_size = var.memory_size
 
   tags = var.tags
 
@@ -71,4 +71,7 @@ resource "aws_lambda_function" "this" {
 }
 
 output "invoke_arn"    { value = aws_lambda_function.this.invoke_arn }
+
 output "function_name" { value = aws_lambda_function.this.function_name }
+
+output "function_arn"  { value = aws_lambda_function.this.arn }

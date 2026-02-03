@@ -1,0 +1,105 @@
+name: Deploy Infrastructure + Lambda
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - 'services/**'
+      - '.github/workflows/deploy.yml'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente para deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: sa-east-1
+  TF_WORKING_DIR: infra/envs/dev
+  ARTIFACTS_BUCKET: todo-calabrial-artifacts-123
+
+jobs:
+  build-and-deploy:
+    name: Build Lambda + Deploy Infra
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build Lambda package
+        run: |
+          echo "Building Lambda package..."
+          cd services/tasks/src
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt -t .
+          fi
+
+          zip -r ../../../lambda-package.zip .
+          cd ../../../
+
+          echo "Lambda package created: lambda-package.zip"
+          ls -lh lambda-package.zip
+
+      - name: Upload Lambda to S3
+        run: |
+          ARTIFACT_VERSION="${GITHUB_SHA:0:7}"
+
+          echo "Uploading lambda-package.zip as version: $ARTIFACT_VERSION"
+
+          aws s3 cp lambda-package.zip \
+            s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/${ARTIFACT_VERSION}.zip
+
+          aws s3 cp lambda-package.zip \
+            s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/latest.zip
+
+          echo "ARTIFACT_VERSION=$ARTIFACT_VERSION" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.6.6'
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -var="lambda_artifact_version=$ARTIFACT_VERSION
+            -var="lambda_artifact_version=$ARTIFACT_VERSION" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Show Terraform Outputs
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "=== Deployment Complete ==="
+          terraform output -json
