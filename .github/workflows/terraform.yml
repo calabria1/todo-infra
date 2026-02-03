@@ -34,67 +34,45 @@ jobs:
         with:
           terraform_version: "1.6.6"
 
-      - name: Clone API repo
-        run: |
-          git clone https://github.com/calabria1/todo-api.git api-src
-
-      # ✅ Debug: mostra estrutura real do repo todo-api
-      - name: Debug API repo tree
-        run: |
-          echo "---- api-src ls ----"
-          ls -la api-src
-          echo "---- find requirements.txt ----"
-          find api-src -maxdepth 5 -name "requirements.txt" -print
-          echo "---- find handler.py ----"
-          find api-src -maxdepth 8 -name "handler.py" -print
-
-      # ✅ Build genérico: encontra o requirements e o src automaticamente
-      - name: Build Lambda zip (auto-detect)
+      # 🔎 Descobre onde está o infra/envs/dev (pode ser infra/envs/dev ou todo-infra/infra/envs/dev)
+      - name: Detect Terraform working directory
+        id: tfdir
         run: |
           set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "Listing root:"
+          ls -la
 
-          REQ_FILE="$(find api-src -maxdepth 6 -path "*/services/*/requirements.txt" -print -quit)"
-          if [ -z "${REQ_FILE}" ]; then
-            echo "Could not find services/*/requirements.txt"
+          if [ -d "infra/envs/dev" ]; then
+            echo "dir=infra/envs/dev" >> $GITHUB_OUTPUT
+            echo "FOUND infra/envs/dev"
+          elif [ -d "todo-infra/infra/envs/dev" ]; then
+            echo "dir=todo-infra/infra/envs/dev" >> $GITHUB_OUTPUT
+            echo "FOUND todo-infra/infra/envs/dev"
+          else
+            echo "Could not find infra/envs/dev in repo."
+            echo "Directories (maxdepth 3):"
+            find . -maxdepth 3 -type d | sed 's|^\./||'
             exit 1
           fi
-          echo "Using requirements: ${REQ_FILE}"
 
-          SRC_DIR="$(dirname "${REQ_FILE}")/src"
-          if [ ! -d "${SRC_DIR}" ]; then
-            echo "Could not find src dir next to requirements: ${SRC_DIR}"
-            exit 1
-          fi
-          echo "Using src dir: ${SRC_DIR}"
-
-          # Descobre o "service name" (ex: tasks) a partir do path services/<name>/requirements.txt
-          SERVICE_NAME="$(echo "${REQ_FILE}" | sed -E 's|.*/services/([^/]+)/requirements.txt|\\1|')"
-          echo "Service name: ${SERVICE_NAME}"
-
-          python -m pip install --upgrade pip
-          rm -rf .build tasks.zip
-          mkdir -p .build/${SERVICE_NAME}
-
-          python -m pip install -r "${REQ_FILE}" -t ".build/${SERVICE_NAME}"
-
-          mkdir -p ".build/${SERVICE_NAME}/services/${SERVICE_NAME}/src"
-          cp -R "${SRC_DIR}/"* ".build/${SERVICE_NAME}/services/${SERVICE_NAME}/src/"
-
-          (cd ".build/${SERVICE_NAME}" && zip -r "../../tasks.zip" . >/dev/null)
-          ls -la tasks.zip
-
-      - name: Upload Lambda artifact to S3 (dev.zip)
+      # (Opcional) Debug do diretório escolhido
+      - name: Show Terraform directory contents
         run: |
-          aws s3 cp tasks.zip "s3://todo-calabria1-artifacts-123/lambdas/tasks/dev.zip"
+          echo "Using TF dir: ${{ steps.tfdir.outputs.dir }}"
+          ls -la "${{ steps.tfdir.outputs.dir }}"
+
+      # ----- (seu build/upload da Lambda pode ficar aqui se já estiver funcionando) -----
+      # Se você já está fazendo build+upload do tasks.zip antes do apply, mantenha esses steps.
 
       - name: Terraform Init
-        working-directory: infra/envs/dev
+        working-directory: ${{ steps.tfdir.outputs.dir }}
         run: terraform init
 
       - name: Terraform Plan
-        working-directory: infra/envs/dev
+        working-directory: ${{ steps.tfdir.outputs.dir }}
         run: terraform plan
 
       - name: Terraform Apply
-        working-directory: infra/envs/dev
+        working-directory: ${{ steps.tfdir.outputs.dir }}
         run: terraform apply -auto-approve
