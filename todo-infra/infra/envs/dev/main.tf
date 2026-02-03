@@ -24,11 +24,13 @@ locals {
 }
 
 # =========================================
-# S3 Bucket para Artefatos (ja existe)
-# Usando data source para referenciar bucket existente
+# S3 Bucket para Artefatos
 # =========================================
-data "aws_s3_bucket" "artifacts" {
-  bucket = var.artifacts_bucket
+module "artifacts" {
+  source = "../../modules/s3"
+
+  name = var.artifacts_bucket
+  tags = local.tags
 }
 
 # =========================================
@@ -52,7 +54,7 @@ module "lambda_tasks" {
   runtime       = "python3.11"
   handler       = "handler.lambda_handler"
 
-  s3_bucket = data.aws_s3_bucket.artifacts.id
+  s3_bucket = module.artifacts.bucket_id
   s3_key    = "lambdas/tasks/${var.lambda_artifact_version}.zip"
 
   env_vars = {
