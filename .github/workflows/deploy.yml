@@ -37,6 +37,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Debug repo structure
+        run: |
+          set -e
+          echo "PWD=$(pwd)"
+          ls -la
+          echo "---- todo-infra ----"
+          ls -la todo-infra || true
+          echo "---- todo-infra/infra/envs/dev ----"
+          ls -la todo-infra/infra/envs/dev || true
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -110,19 +120,23 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: terraform init -input=false -reconfigure
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_IN_AUTOMATION: true
         run: |
           set -euo pipefail
-          terraform plan \
+          terraform plan -input=false \
             -var="lambda_artifact_version=${ARTIFACT_VERSION}" \
             -out=tfplan
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
+        env:
+          TF_IN_AUTOMATION: true
+        run: terraform apply -input=false -auto-approve tfplan
 
       - name: Show Terraform Outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
