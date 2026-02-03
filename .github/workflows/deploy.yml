@@ -25,7 +25,7 @@ permissions:
 
 env:
   AWS_REGION: sa-east-1
-  TF_WORKING_DIR: infra/envs/dev
+  TF_WORKING_DIR: todo-infra/infra/envs/dev
   ARTIFACTS_BUCKET: todo-calabrial-artifacts-123
 
 jobs:
@@ -42,6 +42,29 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure artifacts bucket exists
+        run: |
+          set -euo pipefail
+
+          if aws s3api head-bucket --bucket "${{ env.ARTIFACTS_BUCKET }}" 2>/dev/null; then
+            echo "Artifacts bucket already exists."
+            exit 0
+          fi
+
+          echo "Creating artifacts bucket: ${{ env.ARTIFACTS_BUCKET }}"
+          aws s3api create-bucket \
+            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --create-bucket-configuration "LocationConstraint=${{ env.AWS_REGION }}"
+
+          aws s3api put-public-access-block \
+            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+          aws s3api put-bucket-versioning \
+            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --versioning-configuration Status=Enabled
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -86,11 +109,27 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
+      - name: Terraform Import (artifacts bucket)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          set -euo pipefail
+
+          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket.this"; then
+            terraform import module.artifacts.aws_s3_bucket.this "${{ env.ARTIFACTS_BUCKET }}"
+          fi
+
+          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket_public_access_block.this"; then
+            terraform import module.artifacts.aws_s3_bucket_public_access_block.this "${{ env.ARTIFACTS_BUCKET }}"
+          fi
+
+          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket_versioning.this"; then
+            terraform import module.artifacts.aws_s3_bucket_versioning.this "${{ env.ARTIFACTS_BUCKET }}"
+          fi
+
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform plan \
-            -var="lambda_artifact_version=$ARTIFACT_VERSION
             -var="lambda_artifact_version=$ARTIFACT_VERSION" \
             -out=tfplan
 
