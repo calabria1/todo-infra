@@ -32,10 +32,7 @@ terraform apply
 
 ## Se a infra já existir na AWS
 Se os recursos já foram criados anteriormente (e o state local não existe mais),
-o workflow do GitHub Actions faz um **import best-effort** antes do `plan/apply`
-para reaproveitar a infra existente e só aplicar mudanças reais.
 
-Se preferir rodar localmente, você pode importar manualmente:
 
 ```bash
 cd infra/envs/dev
@@ -46,14 +43,6 @@ terraform import module.lambda_tasks.aws_iam_role.this <nome-da-role>
 terraform import module.lambda_tasks.aws_lambda_function.this <nome-da-lambda>
 terraform import module.api.aws_apigatewayv2_api.this <id-da-api>
 terraform import module.api.aws_apigatewayv2_stage.default <id-da-api>/$default
-terraform import module.api.aws_apigatewayv2_integration.lambda <id-da-api>/<id-da-integracao>
-terraform import module.api.aws_apigatewayv2_route.routes["GET /tasks"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["POST /tasks"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["GET /tasks/{id}"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["PUT /tasks/{id}"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["DELETE /tasks/{id}"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_lambda_permission.allow_apigw <lambda-name>/AllowExecutionFromAPIGateway
-```
 
 ## Integração com o repo todo-api
 O workflow de infra **clona o repo todo-api**, builda o zip e envia pro S3.

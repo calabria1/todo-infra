@@ -11,6 +11,10 @@ resource "aws_apigatewayv2_api" "this" {
   }
 
   tags = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
@@ -33,6 +37,10 @@ resource "aws_apigatewayv2_stage" "default" {
   name        = "$default"
   auto_deploy = true
   tags        = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_lambda_permission" "allow_apigw" {
@@ -41,6 +49,10 @@ resource "aws_lambda_permission" "allow_apigw" {
   function_name = var.lambda_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 output "api_url" {
