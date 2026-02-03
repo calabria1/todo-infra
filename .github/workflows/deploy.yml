@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'infra/**'
+      - 'todo-infra/infra/**'
       - 'services/**'
       - '.github/workflows/deploy.yml'
 
@@ -25,12 +26,12 @@ permissions:
 
 env:
   AWS_REGION: sa-east-1
-  TF_WORKING_DIR: infra/envs/dev
+  TF_WORKING_DIR: todo-infra/infra/envs/dev
   ARTIFACTS_BUCKET: todo-calabrial-artifacts-123
 
 jobs:
   build-and-deploy:
-    name: Build Lambda + Terraform Apply
+    name: Build Lambda + Deploy Infra
     runs-on: ubuntu-latest
 
     steps:
@@ -43,71 +44,62 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ✅ Cria o bucket se não existir (idempotente)
       - name: Ensure artifacts bucket exists
         run: |
           set -euo pipefail
 
-          BUCKET="${{ env.ARTIFACTS_BUCKET }}"
-          REGION="${{ env.AWS_REGION }}"
-
-          echo "Checking bucket: ${BUCKET}"
-
-          if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
+          if aws s3api head-bucket --bucket "${{ env.ARTIFACTS_BUCKET }}" 2>/dev/null; then
             echo "Artifacts bucket already exists."
-          else
-            echo "Creating artifacts bucket: ${BUCKET} in ${REGION}"
-            aws s3api create-bucket \
-              --bucket "${BUCKET}" \
-              --region "${REGION}" \
-              --create-bucket-configuration "LocationConstraint=${REGION}"
-
-            # Versionamento ligado (bom pra artifacts)
-            aws s3api put-bucket-versioning \
-              --bucket "${BUCKET}" \
-              --versioning-configuration Status=Enabled
-
-            echo "Bucket created and configured."
+            exit 0
           fi
+
+          echo "Creating artifacts bucket: ${{ env.ARTIFACTS_BUCKET }}"
+          aws s3api create-bucket \
+            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --create-bucket-configuration "LocationConstraint=${{ env.AWS_REGION }}"
+
+          aws s3api put-public-access-block \
+            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+          aws s3api put-bucket-versioning \
+            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --versioning-configuration Status=Enabled
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Build Lambda package (clean)
+      - name: Build Lambda package
         run: |
-          set -euo pipefail
+          echo "Building Lambda package..."
+          cd services/tasks/src
 
-          ARTIFACT_VERSION="${GITHUB_SHA:0:7}"
-          echo "ARTIFACT_VERSION=$ARTIFACT_VERSION" >> $GITHUB_ENV
-
-          SRC_DIR="services/tasks/src"
-          REQ_1="services/tasks/requirements.txt"
-          REQ_2="${SRC_DIR}/requirements.txt"
-
-          rm -rf build
-          mkdir -p build/lambda
-
-          rsync -av --exclude '__pycache__' --exclude '*.pyc' "${SRC_DIR}/" build/lambda/
-
-          python -m pip install --upgrade pip
-          if [ -f "$REQ_2" ]; then
-            pip install -r "$REQ_2" -t build/lambda
-          elif [ -f "$REQ_1" ]; then
-            pip install -r "$REQ_1" -t build/lambda
-          else
-            echo "No requirements.txt found."
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt -t .
           fi
 
-          (cd build/lambda && zip -r "../../lambda-package.zip" .)
+          zip -r ../../../lambda-package.zip .
+          cd ../../../
+
+          echo "Lambda package created: lambda-package.zip"
           ls -lh lambda-package.zip
 
       - name: Upload Lambda to S3
         run: |
-          set -euo pipefail
+          ARTIFACT_VERSION="${GITHUB_SHA:0:7}"
+
+          echo "Uploading lambda-package.zip as version: $ARTIFACT_VERSION"
+
           aws s3 cp lambda-package.zip \
-            "s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/${ARTIFACT_VERSION}.zip"
+            s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/${ARTIFACT_VERSION}.zip
+
+          aws s3 cp lambda-package.zip \
+            s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/latest.zip
+
+          echo "ARTIFACT_VERSION=$ARTIFACT_VERSION" >> $GITHUB_ENV
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -118,12 +110,28 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
-      - name: Terraform Plan
+      - name: Terraform Import (artifacts bucket)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           set -euo pipefail
+
+          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket.this"; then
+            terraform import module.artifacts.aws_s3_bucket.this "${{ env.ARTIFACTS_BUCKET }}"
+          fi
+
+          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket_public_access_block.this"; then
+            terraform import module.artifacts.aws_s3_bucket_public_access_block.this "${{ env.ARTIFACTS_BUCKET }}"
+          fi
+
+          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket_versioning.this"; then
+            terraform import module.artifacts.aws_s3_bucket_versioning.this "${{ env.ARTIFACTS_BUCKET }}"
+          fi
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
           terraform plan \
-            -var="lambda_artifact_version=${ARTIFACT_VERSION}" \
+            -var="lambda_artifact_version=$ARTIFACT_VERSION" \
             -out=tfplan
 
       - name: Terraform Apply
@@ -132,4 +140,6 @@ jobs:
 
       - name: Show Terraform Outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform output -json
+        run: |
+          echo "=== Deployment Complete ==="
+          terraform output -json
