@@ -30,7 +30,7 @@ variable "env_vars" {
 }
 
 variable "dynamodb_table_arn" {
-  type = strings
+  type = string
   description = "ARN da tabela DynamoDB usada pela Lambda"  
 }
 variable "timeout" {
