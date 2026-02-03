@@ -1,7 +1,14 @@
-variable "name" { type = string }
+variable "name" {
+  type = string
+}
 
-variable "lambda_invoke_arn" { type = string }
-variable "lambda_name" { type = string }
+variable "lambda_invoke_arn" {
+  type = string
+}
+
+variable "lambda_name" {
+  type = string
+}
 
 variable "routes" {
   type = list(object({
@@ -10,4 +17,7 @@ variable "routes" {
   }))
 }
 
-variable "tags" { type = map(string), default = {} }
+variable "tags" {
+  type    = map(string)
+  default = {}
+}
