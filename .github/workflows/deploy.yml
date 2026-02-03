@@ -1,24 +1,12 @@
-name: Deploy Infrastructure + Lambda
+name: Destroy (dev)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'infra/**'
-      - 'todo-infra/infra/**'
-      - 'services/**'
-      - '.github/workflows/deploy.yml'
-
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Ambiente para deploy'
+      confirm:
+        description: 'Digite DESTROY para confirmar'
         required: true
-        default: 'dev'
-        type: choice
-        options:
-          - dev
+        type: string
 
 permissions:
   id-token: write
@@ -26,85 +14,37 @@ permissions:
 
 env:
   AWS_REGION: sa-east-1
-  TF_WORKING_DIR: todo-infra/infra/envs/dev
-  ARTIFACTS_BUCKET: todo-calabrial-artifacts-123
+  TF_WORKING_DIR: infra/envs/dev
 
 jobs:
-  build-and-deploy:
-    name: Build Lambda + Terraform Apply
+  destroy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Check confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "DESTROY" ]; then
+            echo "Confirmação inválida. Digite DESTROY."
+            exit 1
+          fi
+
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # Build limpo (não instala deps dentro do src)
-      - name: Build Lambda package (clean)
-        run: |
-          set -euo pipefail
-
-          ARTIFACT_VERSION="${GITHUB_SHA:0:7}"
-          echo "ARTIFACT_VERSION=$ARTIFACT_VERSION" >> $GITHUB_ENV
-
-          SRC_DIR="services/tasks/src"
-          REQ_1="services/tasks/requirements.txt"
-          REQ_2="${SRC_DIR}/requirements.txt"
-
-          rm -rf build
-          mkdir -p build/lambda
-
-          rsync -av --exclude '__pycache__' --exclude '*.pyc' "${SRC_DIR}/" build/lambda/
-
-          python -m pip install --upgrade pip
-          if [ -f "$REQ_2" ]; then
-            pip install -r "$REQ_2" -t build/lambda
-          elif [ -f "$REQ_1" ]; then
-            pip install -r "$REQ_1" -t build/lambda
-          else
-            echo "No requirements.txt found."
-          fi
-
-          (cd build/lambda && zip -r "../../lambda-package.zip" .)
-          ls -lh lambda-package.zip
-
-      - name: Upload Lambda to S3
-        run: |
-          set -euo pipefail
-          aws s3 cp lambda-package.zip \
-            "s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/${ARTIFACT_VERSION}.zip"
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.6.6'
+          terraform_version: "1.6.6"
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
-      - name: Terraform Plan
+      - name: Terraform Destroy (dev)
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          set -euo pipefail
-          terraform plan \
-            -var="lambda_artifact_version=${ARTIFACT_VERSION}" \
-            -out=tfplan
-
-      - name: Terraform Apply
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
-
-      - name: Show Terraform Outputs
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform output -json
+        run: terraform destroy -auto-approve
