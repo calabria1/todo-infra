@@ -82,10 +82,6 @@ jobs:
 
           if [ -z "$project" ] || [ -z "$env" ] || [ -z "$aws_region" ] || [ -z "$artifacts_bucket" ]; then
             echo "Failed to parse project/env/aws_region/artifacts_bucket from $TFVARS or environment."
-          artifacts_bucket=$(awk -F\" '/^artifacts_bucket/{print $2}' "$TFVARS")
-
-          if [ -z "$project" ] || [ -z "$env" ] || [ -z "$artifacts_bucket" ]; then
-            echo "Failed to parse project/env/artifacts_bucket from $TFVARS."
             exit 1
           fi
 
@@ -131,23 +127,6 @@ jobs:
           fi
 
           api_id=$(aws apigatewayv2 get-apis $region_flag --query "Items[?Name=='${api_name}'].ApiId | [0]" --output text)
-          if aws s3api head-bucket --bucket "$artifacts_bucket" >/dev/null 2>&1; then
-            import_if_missing "module.artifacts.aws_s3_bucket.this" "$artifacts_bucket"
-          fi
-
-          if aws dynamodb describe-table --table-name "$table_name" >/dev/null 2>&1; then
-            import_if_missing "module.dynamodb.aws_dynamodb_table.this" "$table_name"
-          fi
-
-          if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
-            import_if_missing "module.lambda_tasks.aws_iam_role.this" "$role_name"
-          fi
-
-          if aws lambda get-function --function-name "$lambda_name" >/dev/null 2>&1; then
-            import_if_missing "module.lambda_tasks.aws_lambda_function.this" "$lambda_name"
-          fi
-
-          api_id=$(aws apigatewayv2 get-apis --query "Items[?Name=='${api_name}'].ApiId | [0]" --output text)
           if [ -n "$api_id" ] && [ "$api_id" != "None" ]; then
             import_if_missing "module.api.aws_apigatewayv2_api.this" "$api_id"
             import_if_missing "module.api.aws_apigatewayv2_stage.default" "${api_id}/$default"
@@ -156,10 +135,6 @@ jobs:
             if [ -n "$lambda_arn" ] && [ "$lambda_arn" != "None" ]; then
               integration_uri="arn:aws:apigateway:${aws_region}:lambda:path/2015-03-31/functions/${lambda_arn}/invocations"
               integration_id=$(aws apigatewayv2 get-integrations --api-id "$api_id" $region_flag --query "Items[?IntegrationUri=='${integration_uri}'].IntegrationId | [0]" --output text)
-            lambda_arn=$(aws lambda get-function --function-name "$lambda_name" --query "Configuration.FunctionArn" --output text)
-            if [ -n "$lambda_arn" ] && [ "$lambda_arn" != "None" ]; then
-              integration_uri="arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${lambda_arn}/invocations"
-              integration_id=$(aws apigatewayv2 get-integrations --api-id "$api_id" --query "Items[?IntegrationUri=='${integration_uri}'].IntegrationId | [0]" --output text)
               if [ -n "$integration_id" ] && [ "$integration_id" != "None" ]; then
                 import_if_missing "module.api.aws_apigatewayv2_integration.lambda" "${api_id}/${integration_id}"
               fi
@@ -167,7 +142,6 @@ jobs:
 
             for route_key in "POST /tasks" "GET /tasks" "GET /tasks/{id}" "PUT /tasks/{id}" "DELETE /tasks/{id}"; do
               route_id=$(aws apigatewayv2 get-routes --api-id "$api_id" $region_flag --query "Items[?RouteKey=='${route_key}'].RouteId | [0]" --output text)
-              route_id=$(aws apigatewayv2 get-routes --api-id "$api_id" --query "Items[?RouteKey=='${route_key}'].RouteId | [0]" --output text)
               if [ -n "$route_id" ] && [ "$route_id" != "None" ]; then
                 import_if_missing "module.api.aws_apigatewayv2_route.routes[\"${route_key}\"]" "${api_id}/${route_id}"
               fi
@@ -175,14 +149,72 @@ jobs:
           fi
 
           if aws lambda get-policy --function-name "$lambda_name" $region_flag --query "Policy" --output text | grep -q "AllowExecutionFromAPIGateway"; then
-          if aws lambda get-policy --function-name "$lambda_name" --query "Policy" --output text | grep -q "AllowExecutionFromAPIGateway"; then
             import_if_missing "module.api.aws_lambda_permission.allow_apigw" "${lambda_name}/AllowExecutionFromAPIGateway"
           fi
 
+      - name: Check Lambda artifact availability
+        id: artifact
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: |
+          set -euo pipefail
+
+          TFVARS="terraform.tfvars"
+          project=$(awk -F\" '/^project/{print $2}' "$TFVARS")
+          env=$(awk -F\" '/^env/{print $2}' "$TFVARS")
+          aws_region=$(awk -F\" '/^aws_region/{print $2}' "$TFVARS")
+          artifacts_bucket=$(awk -F\" '/^artifacts_bucket/{print $2}' "$TFVARS")
+          lambda_artifact_version=$(awk -F\" '/^lambda_artifact_version/{print $2}' "$TFVARS")
+
+          if [ -z "$aws_region" ]; then
+            aws_region="${AWS_REGION:-}"
+          fi
+
+          if [ -z "$project" ] || [ -z "$env" ] || [ -z "$aws_region" ] || [ -z "$artifacts_bucket" ] || [ -z "$lambda_artifact_version" ]; then
+            echo "refresh_only=true" >> "$GITHUB_OUTPUT"
+            echo "Missing tfvars data for artifact check. Defaulting to refresh-only."
+            exit 0
+          fi
+
+          name="${project}-${env}"
+          lambda_name="${name}-tasks"
+          artifact_key="lambdas/tasks/${lambda_artifact_version}.zip"
+          region_flag="--region ${aws_region}"
+
+          lambda_exists=false
+          if aws lambda get-function --function-name "$lambda_name" $region_flag >/dev/null 2>&1; then
+            lambda_exists=true
+          fi
+
+          if aws s3api head-object --bucket "$artifacts_bucket" --key "$artifact_key" $region_flag >/dev/null 2>&1; then
+            echo "refresh_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$lambda_exists" = true ]; then
+            echo "Lambda exists but artifact key ${artifact_key} is missing. Using refresh-only."
+            echo "refresh_only=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Lambda does not exist and artifact key ${artifact_key} is missing. Using refresh-only."
+          echo "refresh_only=true" >> "$GITHUB_OUTPUT"
+
       - name: Terraform Plan
+        if: steps.artifact.outputs.refresh_only != 'true'
         working-directory: ${{ steps.tfdir.outputs.dir }}
         run: terraform plan
 
+      - name: Terraform Plan (refresh-only)
+        if: steps.artifact.outputs.refresh_only == 'true'
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: terraform plan -refresh-only
+
       - name: Terraform Apply
+        if: steps.artifact.outputs.refresh_only != 'true'
         working-directory: ${{ steps.tfdir.outputs.dir }}
         run: terraform apply -auto-approve
+
+      - name: Terraform Apply (refresh-only)
+        if: steps.artifact.outputs.refresh_only == 'true'
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: terraform apply -refresh-only -auto-approve

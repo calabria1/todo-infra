@@ -37,7 +37,6 @@ para reaproveitar a infra existente e só aplicar mudanças reais.
 
 Se preferir rodar localmente, você pode importar manualmente:
 
-
 ```bash
 cd infra/envs/dev
 terraform init
