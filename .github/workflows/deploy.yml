@@ -53,27 +53,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Ensure artifacts bucket exists
-        run: |
-          set -euo pipefail
-
-          BUCKET="${{ env.ARTIFACTS_BUCKET }}"
-          REGION="${{ env.AWS_REGION }}"
-
-          if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
-            echo "Artifacts bucket already exists."
-          else
-            echo "Creating artifacts bucket: ${BUCKET} in ${REGION}"
-            aws s3api create-bucket \
-              --bucket "${BUCKET}" \
-              --region "${REGION}" \
-              --create-bucket-configuration "LocationConstraint=${REGION}"
-
-            aws s3api put-bucket-versioning \
-              --bucket "${BUCKET}" \
-              --versioning-configuration Status=Enabled
-          fi
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
