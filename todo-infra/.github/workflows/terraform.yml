@@ -89,11 +89,12 @@ jobs:
           table_name="${name}-tasks"
           lambda_name="${name}-tasks"
           role_name="${lambda_name}-role"
+          policy_name="${lambda_name}-policy"
           api_name="${name}-api"
           region_flag="--region ${aws_region}"
 
           echo "Using AWS region from tfvars: ${aws_region}"
-          echo "Expecting resources: bucket=${artifacts_bucket} table=${table_name} role=${role_name} lambda=${lambda_name} api=${api_name}"
+          echo "Expecting resources: bucket=${artifacts_bucket} table=${table_name} role=${role_name} policy=${policy_name} lambda=${lambda_name} api=${api_name}"
 
           state_has() {
             terraform state list 2>/dev/null | grep -q "^$1$"
@@ -112,6 +113,12 @@ jobs:
 
           if aws s3api head-bucket --bucket "$artifacts_bucket" $region_flag >/dev/null 2>&1; then
             import_if_missing "module.artifacts.aws_s3_bucket.this" "$artifacts_bucket"
+            if aws s3api get-bucket-public-access-block --bucket "$artifacts_bucket" $region_flag >/dev/null 2>&1; then
+              import_if_missing "module.artifacts.aws_s3_bucket_public_access_block.this" "$artifacts_bucket"
+            fi
+            if aws s3api get-bucket-versioning --bucket "$artifacts_bucket" $region_flag --query "Status" --output text 2>/dev/null | grep -q "Enabled"; then
+              import_if_missing "module.artifacts.aws_s3_bucket_versioning.this" "$artifacts_bucket"
+            fi
           fi
 
           if aws dynamodb describe-table --table-name "$table_name" $region_flag >/dev/null 2>&1; then
@@ -120,6 +127,9 @@ jobs:
 
           if aws iam get-role --role-name "$role_name" $region_flag >/dev/null 2>&1; then
             import_if_missing "module.lambda_tasks.aws_iam_role.this" "$role_name"
+            if aws iam get-role-policy --role-name "$role_name" --policy-name "$policy_name" $region_flag >/dev/null 2>&1; then
+              import_if_missing "module.lambda_tasks.aws_iam_role_policy.this" "${role_name}:${policy_name}"
+            fi
           fi
 
           if aws lambda get-function --function-name "$lambda_name" $region_flag >/dev/null 2>&1; then
