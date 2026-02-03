@@ -12,6 +12,10 @@ resource "aws_iam_role" "this" {
   name               = "${var.function_name}-role"
   assume_role_policy = data.aws_iam_policy_document.assume.json
   tags               = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 data "aws_iam_policy_document" "policy" {
@@ -60,6 +64,10 @@ resource "aws_lambda_function" "this" {
   memory_size = 256
 
   tags = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 output "invoke_arn"    { value = aws_lambda_function.this.invoke_arn }
