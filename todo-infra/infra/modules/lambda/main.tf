@@ -1,0 +1,66 @@
+data "aws_iam_policy_document" "assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "this" {
+  name               = "${var.function_name}-role"
+  assume_role_policy = data.aws_iam_policy_document.assume.json
+  tags               = var.tags
+}
+
+data "aws_iam_policy_document" "policy" {
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "dynamodb:PutItem",
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Scan",
+      "dynamodb:Query"
+    ]
+    resources = [var.dynamodb_table_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "this" {
+  name   = "${var.function_name}-policy"
+  role   = aws_iam_role.this.id
+  policy = data.aws_iam_policy_document.policy.json
+}
+
+resource "aws_lambda_function" "this" {
+  function_name = var.function_name
+  role          = aws_iam_role.this.arn
+  runtime       = var.runtime
+  handler       = var.handler
+
+  s3_bucket = var.s3_bucket
+  s3_key    = var.s3_key
+
+  environment {
+    variables = var.env_vars
+  }
+
+  timeout     = 10
+  memory_size = 256
+
+  tags = var.tags
+}
+
+output "invoke_arn"    { value = aws_lambda_function.this.invoke_arn }
+output "function_name" { value = aws_lambda_function.this.function_name }
