@@ -32,8 +32,7 @@ terraform apply
 
 ## Se a infra já existir na AWS
 Se os recursos já foram criados anteriormente (e o state local não existe mais),
-o Terraform vai tentar recriar e falhar por conflito de nomes. Para reaproveitar
-a infra existente, importe os recursos antes do `plan/apply`:
+
 
 ```bash
 cd infra/envs/dev
@@ -44,10 +43,6 @@ terraform import module.lambda_tasks.aws_iam_role.this <nome-da-role>
 terraform import module.lambda_tasks.aws_lambda_function.this <nome-da-lambda>
 terraform import module.api.aws_apigatewayv2_api.this <id-da-api>
 terraform import module.api.aws_apigatewayv2_stage.default <id-da-api>/$default
-terraform import module.api.aws_lambda_permission.allow_apigw <lambda-name>/AllowExecutionFromAPIGateway
-```
-
-Depois disso, o `terraform plan` só vai aplicar mudanças reais.
 
 ## Integração com o repo todo-api
 O workflow de infra **clona o repo todo-api**, builda o zip e envia pro S3.
