@@ -25,9 +25,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: sa-east-1
   TF_WORKING_DIR: todo-infra/infra/envs/dev
-  ARTIFACTS_BUCKET: todo-calabrial-artifacts-123
 
 jobs:
   build-and-deploy:
@@ -38,33 +36,57 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Load Terraform variables
+        id: tfvars
+        run: |
+          TFVARS_FILE="${{ env.TF_WORKING_DIR }}/terraform.tfvars"
+          if [[ ! -f "${TFVARS_FILE}" ]]; then
+            echo "terraform.tfvars not found at ${TFVARS_FILE}" >&2
+            exit 1
+          fi
+          PROJECT=$(grep -E '^project' "${TFVARS_FILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+          ENVIRONMENT=$(grep -E '^env' "${TFVARS_FILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+          AWS_REGION=$(grep -E '^aws_region' "${TFVARS_FILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+          ARTIFACTS_BUCKET=$(grep -E '^artifacts_bucket' "${TFVARS_FILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+          {
+            echo "project=${PROJECT}"
+            echo "environment=${ENVIRONMENT}"
+            echo "aws_region=${AWS_REGION}"
+            echo "artifacts_bucket=${ARTIFACTS_BUCKET}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo "AWS_REGION=${AWS_REGION}"
+            echo "ARTIFACTS_BUCKET=${ARTIFACTS_BUCKET}"
+            echo "APP_NAME=${PROJECT}-${ENVIRONMENT}"
+          } >> "${GITHUB_ENV}"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ steps.tfvars.outputs.aws_region }}
 
       - name: Ensure artifacts bucket exists
         run: |
           set -euo pipefail
 
-          if aws s3api head-bucket --bucket "${{ env.ARTIFACTS_BUCKET }}" 2>/dev/null; then
+          if aws s3api head-bucket --bucket "${ARTIFACTS_BUCKET}" 2>/dev/null; then
             echo "Artifacts bucket already exists."
             exit 0
           fi
 
-          echo "Creating artifacts bucket: ${{ env.ARTIFACTS_BUCKET }}"
+          echo "Creating artifacts bucket: ${ARTIFACTS_BUCKET}"
           aws s3api create-bucket \
-            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
-            --region "${{ env.AWS_REGION }}" \
-            --create-bucket-configuration "LocationConstraint=${{ env.AWS_REGION }}"
+            --bucket "${ARTIFACTS_BUCKET}" \
+            --region "${AWS_REGION}" \
+            --create-bucket-configuration "LocationConstraint=${AWS_REGION}"
 
           aws s3api put-public-access-block \
-            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --bucket "${ARTIFACTS_BUCKET}" \
             --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 
           aws s3api put-bucket-versioning \
-            --bucket "${{ env.ARTIFACTS_BUCKET }}" \
+            --bucket "${ARTIFACTS_BUCKET}" \
             --versioning-configuration Status=Enabled
 
       - name: Setup Python
@@ -74,30 +96,20 @@ jobs:
 
       - name: Build Lambda package
         run: |
-          echo "Building Lambda package..."
-          cd services/tasks/src
-
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt -t .
-          fi
-
-          zip -r ../../../lambda-package.zip .
-          cd ../../../
-
-          echo "Lambda package created: lambda-package.zip"
-          ls -lh lambda-package.zip
+          chmod +x scripts/package_lambda.sh
+          LAMBDA_SRC_DIR=services/tasks/src ZIP_PATH=build/tasks.zip scripts/package_lambda.sh
 
       - name: Upload Lambda to S3
         run: |
           ARTIFACT_VERSION="${GITHUB_SHA:0:7}"
 
-          echo "Uploading lambda-package.zip as version: $ARTIFACT_VERSION"
+          echo "Uploading build/tasks.zip as version: $ARTIFACT_VERSION"
 
-          aws s3 cp lambda-package.zip \
-            s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/${ARTIFACT_VERSION}.zip
+          aws s3 cp build/tasks.zip \
+            s3://${ARTIFACTS_BUCKET}/lambdas/tasks/${ARTIFACT_VERSION}.zip
 
-          aws s3 cp lambda-package.zip \
-            s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/latest.zip
+          aws s3 cp build/tasks.zip \
+            s3://${ARTIFACTS_BUCKET}/lambdas/tasks/latest.zip
 
           echo "ARTIFACT_VERSION=$ARTIFACT_VERSION" >> $GITHUB_ENV
 
@@ -113,19 +125,14 @@ jobs:
       - name: Terraform Import (artifacts bucket)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          set -euo pipefail
-
-          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket.this"; then
-            terraform import module.artifacts.aws_s3_bucket.this "${{ env.ARTIFACTS_BUCKET }}"
-          fi
-
-          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket_public_access_block.this"; then
-            terraform import module.artifacts.aws_s3_bucket_public_access_block.this "${{ env.ARTIFACTS_BUCKET }}"
-          fi
-
-          if ! terraform state list | grep -q "module.artifacts.aws_s3_bucket_versioning.this"; then
-            terraform import module.artifacts.aws_s3_bucket_versioning.this "${{ env.ARTIFACTS_BUCKET }}"
-          fi
+          set +e
+          terraform import module.artifacts.aws_s3_bucket.this "${ARTIFACTS_BUCKET}"
+          terraform import module.artifacts.aws_s3_bucket_public_access_block.this "${ARTIFACTS_BUCKET}"
+          terraform import module.artifacts.aws_s3_bucket_versioning.this "${ARTIFACTS_BUCKET}"
+          terraform import module.dynamodb.aws_dynamodb_table.this "${APP_NAME}-tasks"
+          terraform import module.lambda_tasks.aws_iam_role.this "${APP_NAME}-tasks-role"
+          terraform import module.lambda_tasks.aws_iam_role_policy.this "${APP_NAME}-tasks-role:${APP_NAME}-tasks-policy"
+          set -e
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
