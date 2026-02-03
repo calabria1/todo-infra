@@ -6,7 +6,7 @@ Provisiona a infra inteira na AWS:
 - Lambda (aponta para zip no S3)
 - API Gateway HTTP API (aberta, sem auth)
 - IAM (role/policy para lambda)
-- CloudWatch Logs (via AWS padrão)
+- CloudWatcdh Logs (via AWS padrão)
 
 > Você vai preencher alguns valores (bucket names/estado/backend) e depois rdodar via GitHub Actions.
 
