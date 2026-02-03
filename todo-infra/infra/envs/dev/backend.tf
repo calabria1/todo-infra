@@ -1,10 +1,7 @@
+# backend.tf
+# ✅ Para não travar no GitHub Actions, estamos usando state LOCAL por enquanto.
+# Depois, se quiser state remoto (S3), a gente ativa de novo.
+
 terraform {
-  backend "s3" {
-    # TODO: preencha:
-    # bucket         = "SEU_BUCKET_STATE"
-    # key            = "todo/dev/terraform.tfstate"
-    # region         = "sa-east-1"
-    # dynamodb_table = "SEU_LOCK_TABLE" # opcional, recomendado
-    # encrypt        = true
-  }
+  # (sem backend configurado)
 }
