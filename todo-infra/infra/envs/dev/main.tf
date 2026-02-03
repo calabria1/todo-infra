@@ -3,10 +3,9 @@ provider "aws" {
 }
 
 # ---------- S3 Artifacts ----------
-resource "aws_s3_bucket" "artifacts" {
+data "aws_s3_bucket" "artifacts" {
   bucket = var.artifacts_bucket
 }
-
 # ---------- DynamoDB ----------
 resource "aws_dynamodb_table" "tarefas" {
   name         = var.dynamodb_table_name
@@ -75,7 +74,7 @@ resource "aws_lambda_function" "tarefas" {
   runtime       = "python3.11"
   handler       = "handler.lambda_handler"
 
-  s3_bucket = aws_s3_bucket.artifacts.bucket
+  s3_bucket = data.aws_s3_bucket.artifacts.bucket
   s3_key    = "lambdas/tasks/${var.lambda_artifact_version}.zip"
 
   environment {
