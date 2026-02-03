@@ -76,8 +76,12 @@ jobs:
           aws_region=$(awk -F\" '/^aws_region/{print $2}' "$TFVARS")
           artifacts_bucket=$(awk -F\" '/^artifacts_bucket/{print $2}' "$TFVARS")
 
+          if [ -z "$aws_region" ]; then
+            aws_region="${AWS_REGION:-}"
+          fi
+
           if [ -z "$project" ] || [ -z "$env" ] || [ -z "$aws_region" ] || [ -z "$artifacts_bucket" ]; then
-            echo "Failed to parse project/env/aws_region/artifacts_bucket from $TFVARS."
+            echo "Failed to parse project/env/aws_region/artifacts_bucket from $TFVARS or environment."
             exit 1
           fi
 
