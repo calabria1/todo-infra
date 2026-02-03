@@ -18,35 +18,53 @@ jobs:
       - name: Checkout infra repo
         uses: actions/checkout@v4
 
-      - name: Debug folders (to find correct working directory)
-        run: |
-          echo "PWD=$(pwd)"
-          echo "---- root ls ----"
-          ls -la
-          echo "---- find dirs (maxdepth 4) ----"
-          find . -maxdepth 4 -type d | sed 's|^\./||'
-          echo "---- check expected paths ----"
-          [ -d "infra/envs/dev" ] && echo "FOUND: infra/envs/dev" || echo "MISSING: infra/envs/dev"
-          [ -d "todo-infra/infra/envs/dev" ] && echo "FOUND: todo-infra/infra/envs/dev" || echo "MISSING: todo-infra/infra/envs/dev"
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      # ⚠️ Ajustado para o caso em que o repo tem uma pasta "todo-infra/" na raiz
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      # 1) Clona o repo da API
+      - name: Clone API repo
+        run: |
+          git clone https://github.com/calabria1/todo-api.git api-src
+
+      # 2) Build do zip da Lambda
+      - name: Build Lambda zip (tasks)
+        working-directory: api-src
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r services/tasks/requirements.txt -t .build/tasks
+          mkdir -p .build/tasks/services/tasks/src
+          cp -R services/tasks/src/* .build/tasks/services/tasks/src/
+          cd .build/tasks
+          zip -r ../../tasks.zip . >/dev/null
+          ls -la ../../tasks.zip
+
+      # 3) Upload do zip pro S3 no key que o Terraform espera
+      - name: Upload Lambda artifact to S3 (dev.zip)
+        run: |
+          aws s3 cp tasks.zip "s3://todo-calabria1-artifacts-123/lambdas/tasks/dev.zip"
+
+      # 4) Terraform
       - name: Terraform Init
-        working-directory: todo-infra/infra/envs/dev
+        working-directory: infra/envs/dev
         run: terraform init
 
       - name: Terraform Plan
-        working-directory: todo-infra/infra/envs/dev
+        working-directory: infra/envs/dev
         run: terraform plan
 
       - name: Terraform Apply
-        working-directory: todo-infra/infra/envs/dev
+        working-directory: infra/envs/dev
         run: terraform apply -auto-approve
