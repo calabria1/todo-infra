@@ -35,14 +35,38 @@ Se os recursos já foram criados anteriormente (e o state local não existe mais
 o workflow do GitHub Actions faz um **import best-effort** antes do `plan/apply`
 para reaproveitar a infra existente e só aplicar mudanças reais.
 
-Se preferir rodar localmente, você pode importar manualmente:
+### Opção 2 (recomendada): importar recursos no state sem apagar nada
+Essa opção aproveita o que já existe na AWS e recria o state local.
 
+**Passo A — criar o state local**
 ```bash
 cd infra/envs/dev
 terraform init
+```
+
+**Passo B — importar cada recurso existente**
+
+S3 (bucket + public access block + versioning):
+```bash
 terraform import module.artifacts.aws_s3_bucket.this <nome-do-bucket>
+terraform import module.artifacts.aws_s3_bucket_public_access_block.this <nome-do-bucket>
+terraform import module.artifacts.aws_s3_bucket_versioning.this <nome-do-bucket>
+```
+
+DynamoDB (tabela):
+```bash
 terraform import module.dynamodb.aws_dynamodb_table.this <nome-da-tabela>
+```
+
+IAM (role + policy da Lambda):
+```bash
 terraform import module.lambda_tasks.aws_iam_role.this <nome-da-role>
+terraform import module.lambda_tasks.aws_iam_role_policy.this <nome-da-role>:<nome-da-policy>
+```
+
+> Se você também precisar importar Lambda e API Gateway, mantenha os imports abaixo
+> (opcional, conforme o que já existir na conta):
+```bash
 terraform import module.lambda_tasks.aws_lambda_function.this <nome-da-lambda>
 terraform import module.api.aws_apigatewayv2_api.this <id-da-api>
 terraform import module.api.aws_apigatewayv2_stage.default <id-da-api>/$default
