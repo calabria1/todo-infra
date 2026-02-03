@@ -34,29 +34,59 @@ jobs:
         with:
           terraform_version: "1.6.6"
 
-      # 1) Clona o repo da API
       - name: Clone API repo
         run: |
           git clone https://github.com/calabria1/todo-api.git api-src
 
-      # 2) Build do zip da Lambda
-      - name: Build Lambda zip (tasks)
-        working-directory: api-src
+      # ✅ Debug: mostra estrutura real do repo todo-api
+      - name: Debug API repo tree
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r services/tasks/requirements.txt -t .build/tasks
-          mkdir -p .build/tasks/services/tasks/src
-          cp -R services/tasks/src/* .build/tasks/services/tasks/src/
-          cd .build/tasks
-          zip -r ../../tasks.zip . >/dev/null
-          ls -la ../../tasks.zip
+          echo "---- api-src ls ----"
+          ls -la api-src
+          echo "---- find requirements.txt ----"
+          find api-src -maxdepth 5 -name "requirements.txt" -print
+          echo "---- find handler.py ----"
+          find api-src -maxdepth 8 -name "handler.py" -print
 
-      # 3) Upload do zip pro S3 no key que o Terraform espera
+      # ✅ Build genérico: encontra o requirements e o src automaticamente
+      - name: Build Lambda zip (auto-detect)
+        run: |
+          set -euo pipefail
+
+          REQ_FILE="$(find api-src -maxdepth 6 -path "*/services/*/requirements.txt" -print -quit)"
+          if [ -z "${REQ_FILE}" ]; then
+            echo "Could not find services/*/requirements.txt"
+            exit 1
+          fi
+          echo "Using requirements: ${REQ_FILE}"
+
+          SRC_DIR="$(dirname "${REQ_FILE}")/src"
+          if [ ! -d "${SRC_DIR}" ]; then
+            echo "Could not find src dir next to requirements: ${SRC_DIR}"
+            exit 1
+          fi
+          echo "Using src dir: ${SRC_DIR}"
+
+          # Descobre o "service name" (ex: tasks) a partir do path services/<name>/requirements.txt
+          SERVICE_NAME="$(echo "${REQ_FILE}" | sed -E 's|.*/services/([^/]+)/requirements.txt|\\1|')"
+          echo "Service name: ${SERVICE_NAME}"
+
+          python -m pip install --upgrade pip
+          rm -rf .build tasks.zip
+          mkdir -p .build/${SERVICE_NAME}
+
+          python -m pip install -r "${REQ_FILE}" -t ".build/${SERVICE_NAME}"
+
+          mkdir -p ".build/${SERVICE_NAME}/services/${SERVICE_NAME}/src"
+          cp -R "${SRC_DIR}/"* ".build/${SERVICE_NAME}/services/${SERVICE_NAME}/src/"
+
+          (cd ".build/${SERVICE_NAME}" && zip -r "../../tasks.zip" . >/dev/null)
+          ls -la tasks.zip
+
       - name: Upload Lambda artifact to S3 (dev.zip)
         run: |
           aws s3 cp tasks.zip "s3://todo-calabria1-artifacts-123/lambdas/tasks/dev.zip"
 
-      # 4) Terraform
       - name: Terraform Init
         working-directory: infra/envs/dev
         run: terraform init
