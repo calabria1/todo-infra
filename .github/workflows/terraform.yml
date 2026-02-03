@@ -62,7 +62,7 @@ jobs:
           echo "Using TF dir: ${{ steps.tfdir.outputs.dir }}"
           ls -la "${{ steps.tfdir.outputs.dir }}"
 
-      # ----- (seu build/upload da Lambda pode ficar aqui se já estiver funcionando) -----
+      # ----- (se build/upload da Lambda pode ficar aqui se já estiver funcionando) -----
       # Se você já está fazendo build+upload do tasks.zip antes do apply, mantenha esses steps.
 
       - name: Terraform Init
