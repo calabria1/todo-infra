@@ -25,7 +25,7 @@ permissions:
 
 env:
   AWS_REGION: sa-east-1
-  TF_WORKING_DIR: infra/envs/dev
+  TF_WORKING_DIR: todo-infra/infra/envs/dev
   ARTIFACTS_BUCKET: gestao-tarefas-dev-artifacts-calabria1-sa-east-1
 
 jobs:
