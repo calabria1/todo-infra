@@ -1,0 +1,157 @@
+name: Terraform Deploy (Infra + Lambda)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      # 🔎 Descobre onde está o infra/envs/dev (pode ser infra/envs/dev ou todo-infra/infra/envs/dev)
+      - name: Detect Terraform working directory
+        id: tfdir
+        run: |
+          set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "Listing root:"
+          ls -la
+
+          if [ -d "infra/envs/dev" ]; then
+            echo "dir=infra/envs/dev" >> $GITHUB_OUTPUT
+            echo "FOUND infra/envs/dev"
+          elif [ -d "todo-infra/infra/envs/dev" ]; then
+            echo "dir=todo-infra/infra/envs/dev" >> $GITHUB_OUTPUT
+            echo "FOUND todo-infra/infra/envs/dev"
+          else
+            echo "Could not find infra/envs/dev in repo."
+            echo "Directories (maxdepth 3):"
+            find . -maxdepth 3 -type d | sed 's|^\./||'
+            exit 1
+          fi
+
+      - name: Show Terraform directory contents
+        run: |
+          echo "Using TF dir: ${{ steps.tfdir.outputs.dir }}"
+          ls -la "${{ steps.tfdir.outputs.dir }}"
+
+      - name: Terraform Init
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: terraform init
+
+      - name: Import existing resources (best effort)
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: |
+          set -euo pipefail
+
+          TFVARS="terraform.tfvars"
+          if [ ! -f "$TFVARS" ]; then
+            echo "Missing $TFVARS. Cannot derive resource names."
+            exit 1
+          fi
+
+          project=$(awk -F\" '/^project/{print $2}' "$TFVARS")
+          env=$(awk -F\" '/^env/{print $2}' "$TFVARS")
+          aws_region=$(awk -F\" '/^aws_region/{print $2}' "$TFVARS")
+          artifacts_bucket=$(awk -F\" '/^artifacts_bucket/{print $2}' "$TFVARS")
+
+          if [ -z "$project" ] || [ -z "$env" ] || [ -z "$aws_region" ] || [ -z "$artifacts_bucket" ]; then
+            echo "Failed to parse project/env/aws_region/artifacts_bucket from $TFVARS."
+            exit 1
+          fi
+
+          name="${project}-${env}"
+          table_name="${name}-tasks"
+          lambda_name="${name}-tasks"
+          role_name="${lambda_name}-role"
+          api_name="${name}-api"
+          region_flag="--region ${aws_region}"
+
+          echo "Using AWS region from tfvars: ${aws_region}"
+          echo "Expecting resources: bucket=${artifacts_bucket} table=${table_name} role=${role_name} lambda=${lambda_name} api=${api_name}"
+
+          state_has() {
+            terraform state list 2>/dev/null | grep -q "^$1$"
+          }
+
+          import_if_missing() {
+            local address="$1"
+            local import_id="$2"
+            if state_has "$address"; then
+              echo "State already has $address"
+              return 0
+            fi
+            echo "Importing $address ($import_id)"
+            terraform import "$address" "$import_id"
+          }
+
+          if aws s3api head-bucket --bucket "$artifacts_bucket" $region_flag >/dev/null 2>&1; then
+            import_if_missing "module.artifacts.aws_s3_bucket.this" "$artifacts_bucket"
+          fi
+
+          if aws dynamodb describe-table --table-name "$table_name" $region_flag >/dev/null 2>&1; then
+            import_if_missing "module.dynamodb.aws_dynamodb_table.this" "$table_name"
+          fi
+
+          if aws iam get-role --role-name "$role_name" $region_flag >/dev/null 2>&1; then
+            import_if_missing "module.lambda_tasks.aws_iam_role.this" "$role_name"
+          fi
+
+          if aws lambda get-function --function-name "$lambda_name" $region_flag >/dev/null 2>&1; then
+            import_if_missing "module.lambda_tasks.aws_lambda_function.this" "$lambda_name"
+          fi
+
+          api_id=$(aws apigatewayv2 get-apis $region_flag --query "Items[?Name=='${api_name}'].ApiId | [0]" --output text)
+          if [ -n "$api_id" ] && [ "$api_id" != "None" ]; then
+            import_if_missing "module.api.aws_apigatewayv2_api.this" "$api_id"
+            import_if_missing "module.api.aws_apigatewayv2_stage.default" "${api_id}/$default"
+
+            lambda_arn=$(aws lambda get-function --function-name "$lambda_name" $region_flag --query "Configuration.FunctionArn" --output text)
+            if [ -n "$lambda_arn" ] && [ "$lambda_arn" != "None" ]; then
+              integration_uri="arn:aws:apigateway:${aws_region}:lambda:path/2015-03-31/functions/${lambda_arn}/invocations"
+              integration_id=$(aws apigatewayv2 get-integrations --api-id "$api_id" $region_flag --query "Items[?IntegrationUri=='${integration_uri}'].IntegrationId | [0]" --output text)
+              if [ -n "$integration_id" ] && [ "$integration_id" != "None" ]; then
+                import_if_missing "module.api.aws_apigatewayv2_integration.lambda" "${api_id}/${integration_id}"
+              fi
+            fi
+
+            for route_key in "POST /tasks" "GET /tasks" "GET /tasks/{id}" "PUT /tasks/{id}" "DELETE /tasks/{id}"; do
+              route_id=$(aws apigatewayv2 get-routes --api-id "$api_id" $region_flag --query "Items[?RouteKey=='${route_key}'].RouteId | [0]" --output text)
+              if [ -n "$route_id" ] && [ "$route_id" != "None" ]; then
+                import_if_missing "module.api.aws_apigatewayv2_route.routes[\"${route_key}\"]" "${api_id}/${route_id}"
+              fi
+            done
+          fi
+
+          if aws lambda get-policy --function-name "$lambda_name" $region_flag --query "Policy" --output text | grep -q "AllowExecutionFromAPIGateway"; then
+            import_if_missing "module.api.aws_lambda_permission.allow_apigw" "${lambda_name}/AllowExecutionFromAPIGateway"
+          fi
+
+      - name: Terraform Plan
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: terraform plan
+
+      - name: Terraform Apply
+        working-directory: ${{ steps.tfdir.outputs.dir }}
+        run: terraform apply -auto-approve
