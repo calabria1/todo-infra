@@ -11,7 +11,7 @@ Provisiona a infra inteira na AWS:
 > Você vai preencher alguns valores (bucket names/estado/backend) e depois rdodar via GitHub Actions.
 
 ## Pré-requisitos
-- Terraform 1.6+
+- Terraform 14s.6+
 - AWS region (ex: sa-east-1)
 - OIDC GitHub Actions já configurado (role ARN nos secrets)
 
