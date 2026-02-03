@@ -1,111 +1,125 @@
-terraform {
-  required_version = ">= 1.6.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.0"
-    }
-  }
-}
-
 provider "aws" {
   region = var.aws_region
 }
 
-locals {
-  name = "${var.project}-${var.env}"
+# ---------- S3 Artifacts ----------
+resource "aws_s3_bucket" "artifacts" {
+  bucket = var.artifacts_bucket
+}
 
-  tags = {
-    project    = var.project
-    env        = var.env
-    managed_by = "terraform"
+# ---------- DynamoDB ----------
+resource "aws_dynamodb_table" "tarefas" {
+  name         = var.dynamodb_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
   }
 }
 
-# =========================================
-# S3 Bucket para Artefatos
-# =========================================
-module "artifacts" {
-  source = "../../modules/s3"
-
-  name = var.artifacts_bucket
-  tags = local.tags
+# ---------- IAM ----------
+data "aws_iam_policy_document" "assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
 }
 
-# =========================================
-# DynamoDB Table
-# =========================================
-module "dynamodb" {
-  source = "../../modules/dynamodb"
-
-  name         = "${local.name}-tasks"
-  billing_mode = "PAY_PER_REQUEST"
-  tags         = local.tags
+resource "aws_iam_role" "lambda_role" {
+  name               = var.iam_role_name
+  assume_role_policy = data.aws_iam_policy_document.assume.json
 }
 
-# =========================================
-# Lambda Function
-# =========================================
-module "lambda_tasks" {
-  source = "../../modules/lambda"
+data "aws_iam_policy_document" "lambda_policy" {
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["*"]
+  }
 
-  function_name = "${local.name}-tasks"
+  statement {
+    actions = [
+      "dynamodb:PutItem",
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Scan"
+    ]
+    resources = [aws_dynamodb_table.tarefas.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_policy" {
+  name   = var.iam_policy_name
+  role   = aws_iam_role.lambda_role.id
+  policy = data.aws_iam_policy_document.lambda_policy.json
+}
+
+# ---------- Lambda ----------
+resource "aws_cloudwatch_log_group" "lambda_logs" {
+  name              = var.log_group_name
+  retention_in_days = 14
+}
+
+resource "aws_lambda_function" "tarefas" {
+  function_name = var.lambda_function_name
+  role          = aws_iam_role.lambda_role.arn
   runtime       = "python3.11"
   handler       = "handler.lambda_handler"
 
-  s3_bucket = module.artifacts.bucket_id
+  s3_bucket = aws_s3_bucket.artifacts.bucket
   s3_key    = "lambdas/tasks/${var.lambda_artifact_version}.zip"
 
-  env_vars = {
-    TABLE_NAME = module.dynamodb.table_name
-    ENV        = var.env
+  environment {
+    variables = {
+      TABLE_NAME = aws_dynamodb_table.tarefas.name
+    }
   }
-
-  dynamodb_table_arn = module.dynamodb.table_arn
-  tags               = local.tags
 }
 
-# =========================================
-# API Gateway HTTP
-# =========================================
-module "api" {
-  source = "../../modules/api_http"
-
-  name               = "${local.name}-api"
-  lambda_invoke_arn  = module.lambda_tasks.invoke_arn
-  lambda_name        = module.lambda_tasks.function_name
-
-  routes = [
-    { method = "POST",   path = "/tasks" },
-    { method = "GET",    path = "/tasks" },
-    { method = "GET",    path = "/tasks/{id}" },
-    { method = "PUT",    path = "/tasks/{id}" },
-    { method = "DELETE", path = "/tasks/{id}" }
-  ]
-
-  tags = local.tags
+# ---------- API Gateway ----------
+resource "aws_apigatewayv2_api" "api" {
+  name          = var.api_name
+  protocol_type = "HTTP"
 }
 
-# =========================================
-# Outputs
-# =========================================
+resource "aws_apigatewayv2_integration" "lambda" {
+  api_id             = aws_apigatewayv2_api.api.id
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.tarefas.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "tarefas" {
+  for_each = toset([
+    "POST /tarefas",
+    "GET /tarefas",
+    "GET /tarefas/{id}",
+    "PUT /tarefas/{id}",
+    "DELETE /tarefas/{id}"
+  ])
+
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = each.value
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_lambda_permission" "api" {
+  statement_id  = "AllowInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.tarefas.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
 output "api_url" {
-  description = "Url da API"
-  value       = module.api.api_url
-}
-
-output "dynamodb_table_name" {
-  description = "Nome da tabela DynamoDB"
-  value       = module.dynamodb.table_name
-}
-
-output "lambda_function_name" {
-  description = "Nome da funcao Lambda"
-  value       = module.lambda_tasks.function_name
-}
-
-output "artifacts_bucket" {
-  description = "Nome do bucket S3 de artefatos"
-  value       = module.artifacts.bucket_id
+  value = aws_apigatewayv2_api.api.api_endpoint
 }

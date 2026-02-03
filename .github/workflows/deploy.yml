@@ -1,12 +1,23 @@
-name: Destroy (dev)
+name: Deploy Infrastructure + Lambda
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - 'services/**'
+      - '.github/workflows/deploy.yml'
+
   workflow_dispatch:
     inputs:
-      confirm:
-        description: 'Digite DESTROY para confirmar'
+      environment:
+        description: 'Ambiente para deploy'
         required: true
-        type: string
+        default: 'dev'
+        type: choice
+        options:
+          - dev
 
 permissions:
   id-token: write
@@ -18,41 +29,107 @@ env:
   ARTIFACTS_BUCKET: todo-calabrial-artifacts-123
 
 jobs:
-  destroy:
+  build-and-deploy:
+    name: Build Lambda + Terraform Apply
     runs-on: ubuntu-latest
-    steps:
-      - name: Check confirmation
-        run: |
-          if [ "${{ inputs.confirm }}" != "DESTROY" ]; then
-            echo "Confirmação inválida. Digite DESTROY."
-            exit 1
-          fi
 
-      - name: Checkout
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # (opcional, mas evita destroy travar se bucket estiver no TF e cheio)
-      - name: Empty artifacts bucket (best effort)
+      # ✅ Cria o bucket se não existir (idempotente)
+      - name: Ensure artifacts bucket exists
         run: |
-          set +e
-          aws s3 rm "s3://${{ env.ARTIFACTS_BUCKET }}" --recursive
-          set -e
+          set -euo pipefail
+
+          BUCKET="${{ env.ARTIFACTS_BUCKET }}"
+          REGION="${{ env.AWS_REGION }}"
+
+          echo "Checking bucket: ${BUCKET}"
+
+          if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
+            echo "Artifacts bucket already exists."
+          else
+            echo "Creating artifacts bucket: ${BUCKET} in ${REGION}"
+            aws s3api create-bucket \
+              --bucket "${BUCKET}" \
+              --region "${REGION}" \
+              --create-bucket-configuration "LocationConstraint=${REGION}"
+
+            # Versionamento ligado (bom pra artifacts)
+            aws s3api put-bucket-versioning \
+              --bucket "${BUCKET}" \
+              --versioning-configuration Status=Enabled
+
+            echo "Bucket created and configured."
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build Lambda package (clean)
+        run: |
+          set -euo pipefail
+
+          ARTIFACT_VERSION="${GITHUB_SHA:0:7}"
+          echo "ARTIFACT_VERSION=$ARTIFACT_VERSION" >> $GITHUB_ENV
+
+          SRC_DIR="services/tasks/src"
+          REQ_1="services/tasks/requirements.txt"
+          REQ_2="${SRC_DIR}/requirements.txt"
+
+          rm -rf build
+          mkdir -p build/lambda
+
+          rsync -av --exclude '__pycache__' --exclude '*.pyc' "${SRC_DIR}/" build/lambda/
+
+          python -m pip install --upgrade pip
+          if [ -f "$REQ_2" ]; then
+            pip install -r "$REQ_2" -t build/lambda
+          elif [ -f "$REQ_1" ]; then
+            pip install -r "$REQ_1" -t build/lambda
+          else
+            echo "No requirements.txt found."
+          fi
+
+          (cd build/lambda && zip -r "../../lambda-package.zip" .)
+          ls -lh lambda-package.zip
+
+      - name: Upload Lambda to S3
+        run: |
+          set -euo pipefail
+          aws s3 cp lambda-package.zip \
+            "s3://${{ env.ARTIFACTS_BUCKET }}/lambdas/tasks/${ARTIFACT_VERSION}.zip"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.6.6"
+          terraform_version: '1.6.6'
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
-      - name: Terraform Destroy (dev)
+      - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform destroy -auto-approve
+        run: |
+          set -euo pipefail
+          terraform plan \
+            -var="lambda_artifact_version=${ARTIFACT_VERSION}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Show Terraform Outputs
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform output -json
