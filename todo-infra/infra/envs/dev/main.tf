@@ -104,3 +104,8 @@ output "lambda_function_name" {
   description = "Nome da funcao Lambda"
   value       = module.lambda_tasks.function_name
 }
+
+output "artifacts_bucket" {
+  description = "Nome do bucket S3 de artefatos"
+  value       = module.artifacts.bucket_id
+}

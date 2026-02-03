@@ -16,7 +16,7 @@ Provisiona a infra inteira na AWS:
 - OIDC GitHub Actions já configurado (role ARN nos secrets)
 
 ## Como usar
-1) Configure os **Secrets** no GitHub:
+1) Configure os **Secrets** no GitHub (Actions):
 - `AWS_ROLE_ARN`
 - `AWS_REGION`
 
@@ -80,5 +80,6 @@ terraform import module.api.aws_lambda_permission.allow_apigw <lambda-name>/Allo
 ```
 
 ## Integração com o repo todo-api
-O workflow de infra **clona o repo todo-api**, builda o zip e envia pro S3.
-Depois o Terraform atualiza a Lambda usando `s3_bucket` + `s3_key`.
+O workflow de infra empacota a Lambda localmente (em `services/tasks`)
+e envia o zip para o S3. Depois o Terraform atualiza a Lambda usando
+`s3_bucket` + `s3_key` com o SHA do commit.

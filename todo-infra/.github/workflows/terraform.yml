@@ -1,0 +1,78 @@
+name: Terraform Apply
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - "services/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: todo-infra
+    env:
+      TF_IN_AUTOMATION: true
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+        with:
+          path: todo-infra
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Package Lambda
+        run: |
+          chmod +x infra/scripts/package_lambda.sh
+          LAMBDA_SRC_DIR=services/tasks/src ZIP_PATH=build/tasks.zip infra/scripts/package_lambda.sh
+
+      - name: Upload Lambda artifact to S3
+        run: |
+          BUCKET=$(grep -E '^artifacts_bucket' infra/envs/dev/terraform.tfvars | awk -F'=' '{print $2}' | tr -d ' "')
+          if [[ -z "${BUCKET}" ]]; then
+            echo "artifacts_bucket not set in terraform outputs or tfvars" >&2
+            exit 1
+          fi
+          aws s3 cp build/tasks.zip "s3://${BUCKET}/lambdas/tasks/${GITHUB_SHA}.zip"
+
+      - name: Terraform init
+        run: terraform -chdir=infra/envs/dev init
+
+      - name: Terraform import (best effort)
+        run: |
+          set +e
+          PROJECT=$(grep -E '^project' infra/envs/dev/terraform.tfvars | awk -F'=' '{print $2}' | tr -d ' "')
+          ENV=$(grep -E '^env' infra/envs/dev/terraform.tfvars | awk -F'=' '{print $2}' | tr -d ' "')
+          BUCKET=$(grep -E '^artifacts_bucket' infra/envs/dev/terraform.tfvars | awk -F'=' '{print $2}' | tr -d ' "')
+          NAME="${PROJECT}-${ENV}"
+          terraform -chdir=infra/envs/dev import module.artifacts.aws_s3_bucket.this "${BUCKET}"
+          terraform -chdir=infra/envs/dev import module.artifacts.aws_s3_bucket_public_access_block.this "${BUCKET}"
+          terraform -chdir=infra/envs/dev import module.artifacts.aws_s3_bucket_versioning.this "${BUCKET}"
+          terraform -chdir=infra/envs/dev import module.dynamodb.aws_dynamodb_table.this "${NAME}-tasks"
+          terraform -chdir=infra/envs/dev import module.lambda_tasks.aws_iam_role.this "${NAME}-tasks-role"
+          terraform -chdir=infra/envs/dev import module.lambda_tasks.aws_iam_role_policy.this "${NAME}-tasks-role:${NAME}-tasks-policy"
+          set -e
+
+      - name: Terraform apply
+        env:
+          TF_VAR_lambda_artifact_version: ${{ github.sha }}
+        run: terraform -chdir=infra/envs/dev apply -auto-approve
