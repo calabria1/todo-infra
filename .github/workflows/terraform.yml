@@ -18,6 +18,17 @@ jobs:
       - name: Checkout infra repo
         uses: actions/checkout@v4
 
+      - name: Debug folders (to find correct working directory)
+        run: |
+          echo "PWD=$(pwd)"
+          echo "---- root ls ----"
+          ls -la
+          echo "---- find dirs (maxdepth 4) ----"
+          find . -maxdepth 4 -type d | sed 's|^\./||'
+          echo "---- check expected paths ----"
+          [ -d "infra/envs/dev" ] && echo "FOUND: infra/envs/dev" || echo "MISSING: infra/envs/dev"
+          [ -d "todo-infra/infra/envs/dev" ] && echo "FOUND: todo-infra/infra/envs/dev" || echo "MISSING: todo-infra/infra/envs/dev"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -27,14 +38,15 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # ⚠️ Ajustado para o caso em que o repo tem uma pasta "todo-infra/" na raiz
       - name: Terraform Init
-        working-directory: infra/envs/dev
+        working-directory: todo-infra/infra/envs/dev
         run: terraform init
 
       - name: Terraform Plan
-        working-directory: infra/envs/dev
+        working-directory: todo-infra/infra/envs/dev
         run: terraform plan
 
       - name: Terraform Apply
-        working-directory: infra/envs/dev
+        working-directory: todo-infra/infra/envs/dev
         run: terraform apply -auto-approve
