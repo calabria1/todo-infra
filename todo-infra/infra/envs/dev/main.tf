@@ -110,9 +110,13 @@ data "aws_iam_policy_document" "lambda_policy" {
       "dynamodb:PutItem",
       "dynamodb:GetItem",
       "dynamodb:UpdateItem",
-      "dynamodb:DeleteItem"
+      "dynamodb:DeleteItem",
+      "dynamodb:Query"
     ]
-    resources = [aws_dynamodb_table.tarefas.arn]
+    resources = [
+      aws_dynamodb_table.tarefas.arn,
+      "${aws_dynamodb_table.tarefas.arn}/index/*"
+    ]
   }
 }
 

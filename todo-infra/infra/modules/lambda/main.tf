@@ -32,11 +32,14 @@ data "aws_iam_policy_document" "policy" {
     actions = [
       "dynamodb:PutItem",
       "dynamodb:GetItem",
- "dynamodb:UpdateItem",
+      "dynamodb:UpdateItem",
       "dynamodb:DeleteItem",
       "dynamodb:Query"
     ]
-    resources = [var.dynamodb_table_arn]
+    resources = [
+      var.dynamodb_table_arn,
+      "${var.dynamodb_table_arn}/index/*"
+    ]
   }
 }
 
