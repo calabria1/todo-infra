@@ -52,7 +52,9 @@ resource "aws_apigatewayv2_deployment" "this" {
       aws_apigatewayv2_route.get_tarefas.id,
       aws_apigatewayv2_route.get_tarefa_id.id,
       aws_apigatewayv2_route.put_tarefa_id.id,
-      aws_apigatewayv2_route.delete_tarefa_id.id
+      aws_apigatewayv2_route.delete_tarefa_id.id,
+      aws_apigatewayv2_route.proxy.id,
+      aws_apigatewayv2_route.options.id
     ]))
   }
 
