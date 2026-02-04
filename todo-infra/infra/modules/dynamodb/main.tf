@@ -19,6 +19,11 @@ resource "aws_dynamodb_table" "this" {
   }
 
   attribute {
+    name = "titulo"
+    type = "S"
+  }
+
+  attribute {
     name = "pk"
     type = "S"
   }
@@ -38,6 +43,13 @@ resource "aws_dynamodb_table" "this" {
   global_secondary_index {
     name            = "status-index"
     hash_key        = "status"
+    range_key       = "data_criacao"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "titulo-index"
+    hash_key        = "titulo"
     range_key       = "data_criacao"
     projection_type = "ALL"
   }

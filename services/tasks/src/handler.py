@@ -123,6 +123,17 @@ def list_tasks(event):
         if exclusive_start_key is not None:
             query_kwargs['ExclusiveStartKey'] = exclusive_start_key
         result = table.query(**query_kwargs)
+    elif 'titulo' in params:
+        titulo_val = params['titulo']
+        query_kwargs = {
+            'IndexName': 'titulo-index',
+            'KeyConditionExpression': Key('titulo').eq(titulo_val),
+            'Limit': limit,
+            'ScanIndexForward': False
+        }
+        if exclusive_start_key is not None:
+            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
+        result = table.query(**query_kwargs)
     else:
         # default: return recent tasks via all_tasks-index (avoid full table scan)
         query_kwargs = {
