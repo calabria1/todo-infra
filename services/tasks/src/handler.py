@@ -4,6 +4,8 @@ Roteamento (API Gateway HTTP API) -> funções de negócio em tasks.py
 """
 
 from tasks import create_task, list_tasks, get_task, update_task, delete_task
+from dynamodb_client import ensure_table_exists
+ensure_table_exists()
 from utils import response
 
 
