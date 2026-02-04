@@ -1,123 +1,21 @@
-# API Serverless de Gerenciamento de Tarefas (To-Do)
+API Serverless de Gerenciamento de Tarefas (To-Do)Esta API foi desenvolvida para permitir que advogados gerenciem suas tarefas diárias de forma eficiente e escalável. A solução utiliza uma arquitetura 100% Serverless na AWS, focando em baixo custo, alta disponibilidade e facilidade de manutenção.🏗️ Arquitetura e TecnologiasLinguagem: Python 3.11 (Produção) / Python Local (Windows Launcher)Compute: AWS Lambda (Stateless)API: API Gateway HTTP (Payload v2.0)Banco de Dados: DynamoDB (NoSQL)Infraestrutura: TerraformCI/CD: GitHub Actions (Deploy automatizado)🚀 Como realizar o Deploy (AWS)O deploy é automatizado via pipeline. Ao realizar um push para a branch main, o GitHub Actions valida a infraestrutura e realiza o deploy.Pré-requisitosConta AWS ativa.Bucket S3 criado manualmente para armazenar o tfstate do Terraform.OIDC ou Usuário IAM com permissões adequadas.Secrets do GitHubEm Settings > Secrets and variables > Actions, configure:AWS_ROLE_ARN / AWS_REGION / S3_BUCKET_ARTIFACTS💻 Execução Local (Desenvolvimento)Esta seção explica o fluxo para desenvolvimento local utilizando DynamoDB Local e um servidor Flask para emular o API Gateway, sem custos e sem alterar a produção.⚠️ Importante: O modo local é ativado apenas quando a variável DYNAMODB_ENDPOINT está definida. Na AWS, essa variável não existe, garantindo o comportamento nativo.1. Pré-requisitos Locais (Windows)Java (para rodar o DynamoDB Local)Python instalado via launcher pyPowerShell2. Rodar o DynamoDB LocalBaixe a versão executável na documentação oficial da AWS.Extraia e execute no terminal:PowerShellcd C:\caminho\para\diretorio_extraido
+java "-Djava.library.path=.\DynamoDBLocal_lib" -jar .\DynamoDBLocal.jar -sharedDb -port 8000
+O banco estará disponível em: http://localhost:8000. Subir a API LocalNo diretório services/tasks/src, execute:PowerShell# Criar e ativar ambiente virtual
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
-## Descrição
+# Instalar dependências locais (Flask, etc)
+py -m pip install -r requirements-local.txt
 
-Esta API foi desenvolvida para permitir que advogados gerenciem suas tarefas diárias de forma eficiente e escalável. A solução utiliza uma arquitetura 100% Serverless na AWS, focando em baixo custo, alta disponibilidade e facilidade de manutenção.
+# Configurar variáveis de ambiente
+$env:DYNAMODB_ENDPOINT="http://localhost:8000"
+$env:AWS_REGION="sa-east-1"
+$env:AWS_ACCESS_KEY_ID="local"
+$env:AWS_SECRET_ACCESS_KEY="local"
+$env:PROJECT="gestao-tarefas"
+$env:ENV="dev"
+$env:PORT="3000"
 
-## Arquitetura e Tecnologias
-
-- **Linguagem:** Python 3.11
-- **Compute:** AWS Lambda (Stateless)
-- **API:** API Gateway HTTP
-- **Banco de Dados:** DynamoDB (NoSQL)
-- **Infraestrutura:** Terraform
-- **CI/CD:** GitHub Actions (Deploy automatizado)
-
-### Desenho da Solução
-
-```
-Usuário -> API Gateway -> Lambda -> DynamoDB
-```
-
-## Como realizar o Deploy
-
-O deploy é automatizado. Ao realizar um push para a branch `main`, o GitHub Actions valida a infraestrutura e realiza o deploy.
-
-### Pré-requisitos
-
-- Conta AWS ativa.
-- Bucket S3 criado manualmente para armazenar o `tfstate` do Terraform (ex: `meu-projeto-tfstate`).
-- Configuração de OIDC ou Usuário IAM com permissões de Administrator para o GitHub Actions.
-
-### Configuração de Secrets no GitHub
-
-No seu repositório, vá em **Settings > Secrets and variables > Actions** e adicione:
-
-- `AWS_ROLE_ARN`: ARN da Role que o GitHub irá assumir.
-- `AWS_REGION`: Ex: `us-east-1`.
-- `S3_BUCKET_ARTIFACTS`: Nome do bucket para armazenar os arquivos `.zip` da Lambda.
-
-## Execução Local
-
-Para testar a lógica da aplicação (handlers e validações) sem subir para a AWS:
-
-### 1. Preparar o Ambiente
-
-```bash
-# Entrar na pasta do serviço
-cd services/tasks/src
-
-# Criar e ativar ambiente virtual
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Instalar dependências
-pip install -r requirements.txt
-```
-
-### 2. Configurar Variáveis de Ambiente
-
-```bash
-# Linux/Mac
-export TABLE_NAME=gestao-tarefas-dev-tarefas
-export AWS_DEFAULT_REGION=us-east-1
-
-# Windows (PowerShell)
-$env:TABLE_NAME="gestao-tarefas-dev-tarefas"
-$env:AWS_DEFAULT_REGION="us-east-1"
-```
-
-### 3. Rodar Teste Local
-
-Crie um arquivo `local_test.py` (ou use o existente) para simular uma chamada:
-
-```python
-from handler import lambda_handler
-
-mock_event = {
-    "requestContext": {"http": {"method": "GET"}},
-    "rawPath": "/tarefas",
-    "queryStringParameters": {"criado_por": "arthur"}
-}
-
-print(lambda_handler(mock_event, None))
-```
-
-Execute com:
-
-```bash
-python local_test.py
-```
-
-## Endpoints da API
-
-| Método | Endpoint        | Descrição                                           |
-| ------ | --------------- | --------------------------------------------------- |
-| POST   | `/tarefas`      | Cria uma nova tarefa                                |
-| GET    | `/tarefas`      | Lista todas as tarefas (suporta filtro por usuário) |
-| GET    | `/tarefas/{id}` | Detalhes de uma tarefa específica                   |
-| PUT    | `/tarefas/{id}` | Atualiza dados ou status de uma tarefa              |
-| DELETE | `/tarefas/{id}` | Remove uma tarefa do sistema                        |
-
-### Exemplo de Payload (POST)
-
-```json
-{
-  "titulo": "Revisão de Defesa - Processo 123",
-  "descricao": "Analisar novas evidências do caso.",
-  "status": "Pendente",
-  "criado_por": "Dr. Arthur"
-}
-```
-
-## Estrutura do Repositório
-
-- `services/tasks/src`: Código fonte da Lambda e `requirements.txt`.
-- `todo-infra/infra`: Arquivos `.tf` para provisionamento do DynamoDB, Lambda e API Gateway.
-- `.github/workflows`: Pipeline de CI/CD.
-
-## Boas Práticas Implementadas
-
-- **Tratamento de Erros:** Respostas padronizadas em JSON com códigos HTTP (200, 201, 400, 404, 500).
-- **Segurança:** Variáveis sensíveis não expostas no código.
-- **Escalabilidade:** Uso de DynamoDB para suportar grandes volumes de acessos sem gargalos de conexão.
+# Rodar o servidor de emulação
+py .\local_server.py
+🛣️ Endpoints da API (Local: http://127.0.0.1:3000)MétodoEndpointDescriçãoPOST/tarefasCria uma nova tarefa via JSON.GET/tarefasLista todas as tarefas locais.GET/tarefas/{id}Busca uma tarefa específica por UUID.PUT/tarefas/{id}Atualiza dados ou status da tarefa.DELETE/tarefas/{id}Remove a tarefa do DynamoDB Local.📂 Estrutura do Repositórioservices/tasks/src: Código da Lambda, local_server.py e lógica de negócio.todo-infra/infra: Arquivos Terraform (Iac)..github/workflows: Definições do pipeline de CI/CD.
