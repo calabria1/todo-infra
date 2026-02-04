@@ -111,8 +111,8 @@ resource "aws_apigatewayv2_route" "tarefas" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
-resource "aws_lambda_permission" "api" {
-  statement_id  = "AllowInvoke"
+resource "aws_lambda_permission" "allow_invoke" {
+  statement_id  = "AllowInvokeFromHttpApi"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.tarefas.function_name
   principal     = "apigateway.amazonaws.com"
