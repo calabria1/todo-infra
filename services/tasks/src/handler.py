@@ -104,30 +104,36 @@ def list_tasks(event):
     # Query by status
     if 'status' in params:
         status = params['status']
-        result = table.query(
-            IndexName='status-index',
-            KeyConditionExpression=Key('status').eq(status),
-            Limit=limit,
-            ExclusiveStartKey=exclusive_start_key
-        )
+        query_kwargs = {
+            'IndexName': 'status-index',
+            'KeyConditionExpression': Key('status').eq(status),
+            'Limit': limit
+        }
+        if exclusive_start_key is not None:
+            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
+        result = table.query(**query_kwargs)
     elif 'criado_por' in params:
         criado_por = params['criado_por']
-        result = table.query(
-            IndexName='criado_por-index',
-            KeyConditionExpression=Key('criado_por').eq(criado_por),
-            Limit=limit,
-            ExclusiveStartKey=exclusive_start_key,
-            ScanIndexForward=False
-        )
+        query_kwargs = {
+            'IndexName': 'criado_por-index',
+            'KeyConditionExpression': Key('criado_por').eq(criado_por),
+            'Limit': limit,
+            'ScanIndexForward': False
+        }
+        if exclusive_start_key is not None:
+            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
+        result = table.query(**query_kwargs)
     else:
         # default: return recent tasks via all_tasks-index (avoid full table scan)
-        result = table.query(
-            IndexName='all_tasks-index',
-            KeyConditionExpression=Key('pk').eq('TASK'),
-            Limit=limit,
-            ExclusiveStartKey=exclusive_start_key,
-            ScanIndexForward=False
-        )
+        query_kwargs = {
+            'IndexName': 'all_tasks-index',
+            'KeyConditionExpression': Key('pk').eq('TASK'),
+            'Limit': limit,
+            'ScanIndexForward': False
+        }
+        if exclusive_start_key is not None:
+            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
+        result = table.query(**query_kwargs)
 
     tarefas = result.get('Items', [])
     last_key = result.get('LastEvaluatedKey')
