@@ -23,19 +23,19 @@ def lambda_handler(event, context):
     path_params = event.get('pathParameters') or {}
 
     try:
-        if path == '/tasks' and http_method == 'POST':
+        if path == '/tarefas' and http_method == 'POST':
             return create_task(event)
 
-        elif path == '/tasks' and http_method == 'GET':
+        elif path == '/tarefas' and http_method == 'GET':
             return list_tasks()
 
-        elif '/tasks/' in path and http_method == 'GET':
+        elif '/tarefas/' in path and http_method == 'GET':
             return get_task(path_params.get('id'))
 
-        elif '/tasks/' in path and http_method == 'PUT':
+        elif '/tarefas/' in path and http_method == 'PUT':
             return update_task(path_params.get('id'), event)
 
-        elif '/tasks/' in path and http_method == 'DELETE':
+        elif '/tarefas/' in path and http_method == 'DELETE':
             return delete_task(path_params.get('id'))
 
         else:
