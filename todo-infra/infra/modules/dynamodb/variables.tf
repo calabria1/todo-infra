@@ -12,5 +12,5 @@ variable "billing_mode" {
 variable "tags" {
   type    = map(string)
   default = {}
-  description = "Tags para o recurso"
+  description = "Taags para o recurso"
 }
