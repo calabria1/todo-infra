@@ -1,85 +1,32 @@
-# todo-infra (Terraform + GitHub Actions)
+API Serverless de Gerenciamento de Tarefas (To-Do)Esta API foi desenvolvida para permitir que advogados gerenciem suas tarefas diárias de forma eficiente e escalável. A solução utiliza uma arquitetura 100% Serverless na AWS, focando em baixo custo, alta disponibilidade e facilidade de manutenção.🏗️ Arquitetura e TecnologiasA solução é composta pelos seguintes componentes:Linguagem: Python 3.10Compute: AWS Lambda (Stateless)API Layer: AWS API Gateway (REST/HTTP)Banco de Dados: Amazon DynamoDB (NoSQL)Infraestrutura como Código (IaC): TerraformCI/CD: GitHub Actions (Deploy automatizado)Desenho da SoluçãoUsuário -> API Gateway -> Lambda -> DynamoDB🚀 Como realizar o Deploy (AWS)O deploy é automatizado. Ao realizar um push para a branch main, o GitHub Actions valida a infraestrutura e realiza o deploy.Pré-requisitosConta AWS ativa.Bucket S3 criado manualmente para armazenar o tfstate do Terraform (ex: meu-projeto-tfstate).Configuração de OIDC ou Usuário IAM com permissões de Administrator para o GitHub Actions.Configuração de Secrets no GitHubNo seu repositório, vá em Settings > Secrets and variables > Actions e adicione:AWS_ROLE_ARN: ARN da Role que o GitHub irá assumir.AWS_REGION: Ex: us-east-1.S3_BUCKET_ARTIFACTS: Nome do bucket para armazenar os arquivos .zip da Lambda.💻 Execução LocalPara testar a lógica da aplicação (handlers e validações) sem subir para a AWS:1. Preparar o AmbienteBash# Entrar na pasta do serviço
+cd services/tasks/src
 
-Provisiona a infra inteira na AWS:
-- S3 (artefatos da Lambda)
-- DynamoDB (tasks)
-- Lambda (aponta para zip no S3)
-- API Gateway HTTP API (aberta, sem auth)
-- IAM (role/policy para lambda)
-- CloudWatcdh Logs (via AWS padrão)
+# Criar e ativar ambiente virtual
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-> Você vai preencher alguns valores (bucket names/estado/backend) e depois rdodar via GitHub Actions.
+# Instalar dependências
+pip install -r requirements.txt
+2. Configurar Variáveis de AmbienteBash# Linux/Mac
+export TABLE_NAME=gestao-tarefas-dev-tarefas
+export AWS_DEFAULT_REGION=us-east-1
 
-## Pré-requisitos
-- Terraform 14s.6+
-- AWS region (ex: sa-east-1)
-- OIDC GitHub Actions já configurado (role ARN nos secrets)
+# Windows (PowerShell)
+$env:TABLE_NAME="gestao-tarefas-dev-tarefas"
+$env:AWS_DEFAULT_REGION="us-east-1"
+3. Rodar Teste de Integração Local crie um arquivo local_test.py (ou use o existente) para simular uma chamada:Pythonfrom handler import lambda_handler
 
-## Como usar
-1) Configure os **Secrets** no GitHub (Actions):
-- `AWS_ROLE_ARN`
-- `AWS_REGIOsN`
+mock_event = {
+    "requestContext": {"http": {"method": "GET"}},
+    "rawPath": "/tarefas",
+    "queryStringParameters": {"criado_por": "arthur"}
+}
 
-2) Ajuste `infra/envs/dev/terraform.tfvars` (bucket/state/nomes)
-
-3) Rode o workflow `terraform.yml` (plan/apply) ou local:
-```bash
-cd infra/envs/dev
-terraform init
-terraform plan
-terraform apply
-```
-
-## Se a infra já existir na AWS
-Se os recursos já foram criados anteriormente (e o state local não existe mais),
-o workflow do GitHub Actions faz um **import best-effort** antes do `plan/apply`
-para reaproveitar a infra existente e só aplicar mudanças reais.
-
-### Opção 2 (recomendada): importar recursos no state sem apagar nada
-Essa opção aproveita o que já existe na AWS e recria o state local.
-
-**Passo A — criar o state local**
-```bash
-cd infra/envs/dev
-terraform init
-```
-
-**Passo B — importar cada recurso existente**
-
-S3 (bucket + public access block + versioning):
-```bash
-terraform import module.artifacts.aws_s3_bucket.this <nome-do-bucket>
-terraform import module.artifacts.aws_s3_bucket_public_access_block.this <nome-do-bucket>
-terraform import module.artifacts.aws_s3_bucket_versioning.this <nome-do-bucket>
-```
-
-DynamoDB (tabela):
-```bash
-terraform import module.dynamodb.aws_dynamodb_table.this <nome-da-tabela>
-```
-
-IAM (role + policy da Lambda):
-```bash
-terraform import module.lambda_tasks.aws_iam_role.this <nome-da-role>
-terraform import module.lambda_tasks.aws_iam_role_policy.this <nome-da-role>:<nome-da-policy>
-```
-
-> Se você também precisar importar Lambda e API Gateway, mantenha os imports abaixo
-> (opcional, conforme o que já existir na conta):
-```bash
-terraform import module.lambda_tasks.aws_lambda_function.this <nome-da-lambda>
-terraform import module.api.aws_apigatewayv2_api.this <id-da-api>
-terraform import module.api.aws_apigatewayv2_stage.default <id-da-api>/$default
-terraform import module.api.aws_apigatewayv2_integration.lambda <id-da-api>/<id-da-integracao>
-terraform import module.api.aws_apigatewayv2_route.routes["GET /tasks"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["POST /tasks"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["GET /tasks/{id}"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["PUT /tasks/{id}"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_apigatewayv2_route.routes["DELETE /tasks/{id}"] <id-da-api>/<id-da-rota>
-terraform import module.api.aws_lambda_permission.allow_apigw <lambda-name>/AllowExecutionFromAPIGateway
-```
-
-## Integração com o repo todo-api
-O workflow de infra empacota a Lambda localmente (em `services/tasks`)
-e envia o zip para o S3. Depois o Terraform atualiza a Lambda usando
-`s3_bucket` + `s3_key` com o SHA do commit.
+print(lambda_handler(mock_event, None))
+Execute com: python local_test.py🛣️ Endpoints da APIMétodoEndpointDescriçãoPOST/tarefasCria uma nova tarefa.GET/tarefasLista todas as tarefas (suporta filtro por criado_por).GET/tarefas/{id}Detalhes de uma tarefa específica.PUT/tarefas/{id}Atualiza dados ou status de uma tarefa.DELETE/tarefas/{id}Remove uma tarefa do sistema.Exemplo de Payload (POST)JSON{
+    "titulo": "Revisão de Defesa - Processo 123",
+    "descricao": "Analisar novas evidências do caso.",
+    "status": "Pendente",
+    "criado_por": "Dr. Arthur"
+}
+📂 Estrutura do Repositório/services/tasks/src: Código fonte da Lambda e requirements.txt./todo-infra/infra: Arquivos .tf para provisionamento do DynamoDB, Lambda e API Gateway./.github/workflows: Pipeline de CI/CD.✅ Boas Práticas ImplementadasTratamento de Erros: Respostas padronizadas em JSON com códigos HTTP (200, 201, 400, 404, 500).Segurança: Variáveis sensíveis não expostas no código.Escalabilidade: Uso de DynamoDB para suportar grandes volumes de acessos sem gargalos de conexão.
