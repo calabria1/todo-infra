@@ -6,7 +6,7 @@ variable "lambda_artifact_version" { type = string }
 
 variable "api_name" { type = string }
 
-variable "function_name" { type = string }
+variable "lambda_function_name" { type = string }
 
 variable "dynamodb_table_name" { type = string }
 
