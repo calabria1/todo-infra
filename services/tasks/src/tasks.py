@@ -17,9 +17,21 @@ from utils import normalize_status, now_iso, today_br, response
 def create_task(event):
     body = json.loads(event.get("body", "{}") or "{}")
 
-    titulo = body.get("titulo", "Sem título")
-    descricao = body.get("descricao", "")
-    criado_por = body.get("criado_por", "")
+    titulo_raw = body.get("titulo")
+    titulo = "Sem título" if titulo_raw is None else str(titulo_raw)
+    descricao_raw = body.get("descricao", "")
+    descricao = "" if descricao_raw is None else str(descricao_raw)
+    criado_por_raw = body.get("criado_por")
+    criado_por = "" if criado_por_raw is None else str(criado_por_raw)
+
+    if titulo_raw is not None and not titulo.strip():
+        return response(400, {"error": "Título não pode ser vazio"})
+    if len(titulo) > 200:
+        return response(400, {"error": "Título deve ter no máximo 200 caracteres"})
+    if len(descricao) > 1000:
+        return response(400, {"error": "Descrição deve ter no máximo 1000 caracteres"})
+    if not criado_por.strip():
+        return response(400, {"error": "criado_por é obrigatório"})
 
     status = normalize_status(body.get("status")) or "Pendente"
 
