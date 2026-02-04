@@ -14,21 +14,6 @@ resource "aws_dynamodb_table" "this" {
   }
 
   attribute {
-    name = "status"
-    type = "S"
-  }
-
-  attribute {
-    name = "titulo"
-    type = "S"
-  }
-
-  attribute {
-    name = "pk"
-    type = "S"
-  }
-
-  attribute {
     name = "data_criacao"
     type = "S"
   }
@@ -36,27 +21,6 @@ resource "aws_dynamodb_table" "this" {
   global_secondary_index {
     name            = "criado_por-index"
     hash_key        = "criado_por"
-    range_key       = "data_criacao"
-    projection_type = "ALL"
-  }
-
-  global_secondary_index {
-    name            = "status-index"
-    hash_key        = "status"
-    range_key       = "data_criacao"
-    projection_type = "ALL"
-  }
-
-  global_secondary_index {
-    name            = "titulo-index"
-    hash_key        = "titulo"
-    range_key       = "data_criacao"
-    projection_type = "ALL"
-  }
-
-  global_secondary_index {
-    name            = "all_tasks-index"
-    hash_key        = "pk"
     range_key       = "data_criacao"
     projection_type = "ALL"
   }

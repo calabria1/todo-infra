@@ -86,13 +86,16 @@ def create_task(event):
 
 
 def list_tasks(event):
-    """Lista tarefas com suporte a filtros via GSI e paginação"""
+    """Lista as tarefas de um usuário (criado_por) em ordem decrescente de data com paginação.
+
+    Requer o query param 'criado_por'."""
     params = event.get('queryStringParameters') or {}
     # limit (default 100)
     try:
         limit = int(params.get('limit', '100')) if params.get('limit') else 100
     except ValueError:
         return response(400, {'error': 'limit inválido'})
+    limit = max(1, min(limit, 1000))
 
     exclusive_start_key = None
     if 'exclusive_start_key' in params:
@@ -101,50 +104,20 @@ def list_tasks(event):
         except Exception:
             return response(400, {'error': 'exclusive_start_key inválido'})
 
-    # Query by status
-    if 'status' in params:
-        status = params['status']
-        query_kwargs = {
-            'IndexName': 'status-index',
-            'KeyConditionExpression': Key('status').eq(status),
-            'Limit': limit
-        }
-        if exclusive_start_key is not None:
-            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
-        result = table.query(**query_kwargs)
-    elif 'criado_por' in params:
-        criado_por = params['criado_por']
-        query_kwargs = {
-            'IndexName': 'criado_por-index',
-            'KeyConditionExpression': Key('criado_por').eq(criado_por),
-            'Limit': limit,
-            'ScanIndexForward': False
-        }
-        if exclusive_start_key is not None:
-            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
-        result = table.query(**query_kwargs)
-    elif 'titulo' in params:
-        titulo_val = params['titulo']
-        query_kwargs = {
-            'IndexName': 'titulo-index',
-            'KeyConditionExpression': Key('titulo').eq(titulo_val),
-            'Limit': limit,
-            'ScanIndexForward': False
-        }
-        if exclusive_start_key is not None:
-            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
-        result = table.query(**query_kwargs)
-    else:
-        # default: return recent tasks via all_tasks-index (avoid full table scan)
-        query_kwargs = {
-            'IndexName': 'all_tasks-index',
-            'KeyConditionExpression': Key('pk').eq('TASK'),
-            'Limit': limit,
-            'ScanIndexForward': False
-        }
-        if exclusive_start_key is not None:
-            query_kwargs['ExclusiveStartKey'] = exclusive_start_key
-        result = table.query(**query_kwargs)
+    criado_por = params.get('criado_por')
+    if not criado_por:
+        return response(400, {'error': 'Parâmetro criado_por é obrigatório para listar tarefas'})
+
+    query_kwargs = {
+        'IndexName': 'criado_por-index',
+        'KeyConditionExpression': Key('criado_por').eq(criado_por),
+        'Limit': limit,
+        'ScanIndexForward': False
+    }
+    if exclusive_start_key is not None:
+        query_kwargs['ExclusiveStartKey'] = exclusive_start_key
+
+    result = table.query(**query_kwargs)
 
     tarefas = result.get('Items', [])
     last_key = result.get('LastEvaluatedKey')
@@ -152,7 +125,7 @@ def list_tasks(event):
     if last_key:
         body['last_evaluated_key'] = last_key
 
-    return response(200, body)
+    return response(200, body) 
 
 
 def get_task(task_id):
