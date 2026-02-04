@@ -47,22 +47,24 @@ def lambda_handler(event, context):
 
 
 def create_task(event):
-    """Cria uma nova tarefa"""
+    """Cria uma nova tarefa a partir do payload esperado em PT"""
     body = json.loads(event.get('body', '{}'))
 
-    titulo = body.get('titulo') or 'Sem título'
-    descricao = body.get('descricao') or ''
-    concluida = bool(body.get('concluida', False))
-
-    now = datetime.utcnow().isoformat()
+    titulo = body.get('titulo', 'Sem título')
+    descricao = body.get('descricao', '')
+    status = body.get('status', 'Pendente')
+    criado_por = body.get('criado_por', '')
+    data_criacao = body.get('data_criacao') or datetime.utcnow().strftime('%d/%m/%Y')
+    data_conclusao = body.get('data_conclusao', '')
 
     task = {
         'id': str(uuid.uuid4()),
         'titulo': titulo,
         'descricao': descricao,
-        'concluida': concluida,
-        'criado_em': now,
-        'atualizado_em': now,
+        'status': status,
+        'criado_por': criado_por,
+        'data_criacao': data_criacao,
+        'data_conclusao': data_conclusao,
     }
 
     table.put_item(Item=task)
@@ -95,29 +97,43 @@ def get_task(task_id):
 
 
 def update_task(task_id, event):
-    """Atualiza uma tarefa"""
+    """Atualiza uma tarefa a partir do payload em PT"""
     if not task_id:
         return response(400, {'error': 'ID da tarefa é obrigatório'})
 
     body = json.loads(event.get('body', '{}'))
 
-    now = datetime.utcnow().isoformat()
-    update_expr = 'SET atualizado_em = :atualizado_em'
-    expr_values = {
-        ':atualizado_em': now
-    }
+    update_expr_parts = []
+    expr_values = {}
 
     if 'titulo' in body:
-        update_expr += ', titulo = :titulo'
+        update_expr_parts.append('titulo = :titulo')
         expr_values[':titulo'] = body['titulo']
 
     if 'descricao' in body:
-        update_expr += ', descricao = :descricao'
+        update_expr_parts.append('descricao = :descricao')
         expr_values[':descricao'] = body['descricao']
 
-    if 'concluida' in body:
-        update_expr += ', concluida = :concluida'
-        expr_values[':concluida'] = bool(body['concluida'])
+    if 'status' in body:
+        update_expr_parts.append('status = :status')
+        expr_values[':status'] = body['status']
+
+    if 'criado_por' in body:
+        update_expr_parts.append('criado_por = :criado_por')
+        expr_values[':criado_por'] = body['criado_por']
+
+    if 'data_criacao' in body:
+        update_expr_parts.append('data_criacao = :data_criacao')
+        expr_values[':data_criacao'] = body['data_criacao']
+
+    if 'data_conclusao' in body:
+        update_expr_parts.append('data_conclusao = :data_conclusao')
+        expr_values[':data_conclusao'] = body['data_conclusao']
+
+    if not update_expr_parts:
+        return response(400, {'error': 'Nenhum campo para atualizar'})
+
+    update_expr = 'SET ' + ', '.join(update_expr_parts)
 
     result = table.update_item(
         Key={'id': task_id},
