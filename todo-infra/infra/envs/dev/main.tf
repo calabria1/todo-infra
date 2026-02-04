@@ -18,11 +18,40 @@ data "aws_s3_bucket" "artifacts" {
 }
 
 # ---------- DynamoDB ----------
-module "dynamodb" {
-  source       = "../../modules/dynamodb"
+resource "aws_dynamodb_table" "tarefas" {
   name         = "${local.prefix}-tarefas"
   billing_mode = "PAY_PER_REQUEST"
-  tags         = local.tags
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  attribute {
+    name = "criado_por"
+    type = "S"
+  }
+
+  attribute {
+    name = "data_criacao"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "criado_por-index"
+    hash_key        = "criado_por"
+    range_key       = "data_criacao"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery { enabled = true }
+
+  tags = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ---------- IAM ----------
@@ -62,8 +91,8 @@ data "aws_iam_policy_document" "lambda_policy" {
       "dynamodb:Scan"
     ]
     resources = [
-      module.dynamodb.table_arn,
-      "${module.dynamodb.table_arn}/index/*"
+      aws_dynamodb_table.tarefas.arn,
+      "${aws_dynamodb_table.tarefas.arn}/index/*"
     ]
   }
 }
@@ -93,7 +122,7 @@ resource "aws_lambda_function" "tarefas" {
 
   environment {
     variables = {
-      TABLE_NAME = module.dynamodb.table_name
+      TABLE_NAME = aws_dynamodb_table.tarefas.name
     }
   }
 
