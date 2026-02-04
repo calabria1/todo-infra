@@ -140,85 +140,21 @@ resource "aws_apigatewayv2_route" "tarefas" {
 }
 
 # ✅ stage obrigatório pra HTTP API publicar rotas
-# ---------- Rotas (explícitas + fallback) ----------
-resource "aws_apigatewayv2_route" "post_tarefas" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /tarefas"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-resource "aws_apigatewayv2_route" "get_tarefas" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /tarefas"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-resource "aws_apigatewayv2_route" "get_tarefa_id" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /tarefas/{id}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-resource "aws_apigatewayv2_route" "put_tarefa_id" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "PUT /tarefas/{id}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-resource "aws_apigatewayv2_route" "delete_tarefa_id" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "DELETE /tarefas/{id}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-# Fallback: qualquer coisa abaixo de /tarefas/ vai pra lambda
-resource "aws_apigatewayv2_route" "proxy_tarefas" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "ANY /tarefas/{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-# CORS preflight
-resource "aws_apigatewayv2_route" "options_proxy" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "OPTIONS /{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-}
-
-# ---------- Deployment forçado (garante publicação das rotas) ----------
-resource "aws_apigatewayv2_deployment" "this" {
-  api_id = aws_apigatewayv2_api.api.id
-
-  triggers = {
-    redeploy = sha1(join(",", [
-      aws_apigatewayv2_route.post_tarefas.id,
-      aws_apigatewayv2_route.get_tarefas.id,
-      aws_apigatewayv2_route.get_tarefa_id.id,
-      aws_apigatewayv2_route.put_tarefa_id.id,
-      aws_apigatewayv2_route.delete_tarefa_id.id,
-      aws_apigatewayv2_route.proxy_tarefas.id,
-      aws_apigatewayv2_route.options_proxy.id
-    ]))
-  }
-
-  depends_on = [
-    aws_apigatewayv2_integration.lambda,
-    aws_apigatewayv2_route.post_tarefas,
-    aws_apigatewayv2_route.get_tarefas,
-    aws_apigatewayv2_route.get_tarefa_id,
-    aws_apigatewayv2_route.put_tarefa_id,
-    aws_apigatewayv2_route.delete_tarefa_id,
-    aws_apigatewayv2_route.proxy_tarefas,
-    aws_apigatewayv2_route.options_proxy
-  ]
-}
-
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.api.id
   name        = "$default"
   auto_deploy = true
+  tags        = local.tags
+}
 
-  deployment_id = aws_apigatewayv2_deployment.this.id
+resource "aws_lambda_permission" "allow_invoke" {
+  statement_id  = "AllowInvokeFromHttpApi"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.tarefas.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
 
-  tags = local.tags
+output "api_url" {
+  value = aws_apigatewayv2_api.api.api_endpoint
 }
