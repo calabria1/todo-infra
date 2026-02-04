@@ -1,6 +1,6 @@
 """
-Lambda Handler para API de Tasks
-Exemplo simples de CRUD com DynamoDB
+Lambda Handler para API de Tarefas
+Exemplo simples de CRUD de tarefas com DynamoDB
 """
 
 import json
@@ -39,7 +39,7 @@ def lambda_handler(event, context):
             return delete_task(path_params.get('id'))
 
         else:
-            return response(404, {'error': 'Not Found'})
+            return response(404, {'error': 'Não encontrado'})
 
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -47,16 +47,22 @@ def lambda_handler(event, context):
 
 
 def create_task(event):
-    """Cria uma nova task"""
+    """Cria uma nova tarefa"""
     body = json.loads(event.get('body', '{}'))
+
+    titulo = body.get('titulo') or 'Sem título'
+    descricao = body.get('descricao') or ''
+    concluida = bool(body.get('concluida', False))
+
+    now = datetime.utcnow().isoformat()
 
     task = {
         'id': str(uuid.uuid4()),
-        'title': body.get('title', 'Untitled'),
-        'description': body.get('description', ''),
-        'completed': False,
-        'created_at': datetime.utcnow().isoformat(),
-        'updated_at': datetime.utcnow().isoformat(),
+        'titulo': titulo,
+        'descricao': descricao,
+        'concluida': concluida,
+        'criado_em': now,
+        'atualizado_em': now,
     }
 
     table.put_item(Item=task)
@@ -64,53 +70,54 @@ def create_task(event):
 
 
 def list_tasks():
-    """Lista todas as tasks"""
+    """Lista todas as tarefas"""
     result = table.scan()
-    tasks = result.get('Items', [])
+    tarefas = result.get('Items', [])
 
     return response(200, {
-        'tasks': tasks,
-        'count': len(tasks)
+        'tarefas': tarefas,
+        'total': len(tarefas)
     })
 
 
 def get_task(task_id):
     """Busca uma task por ID"""
     if not task_id:
-        return response(400, {'error': 'Task ID is required'})
+        return response(400, {'error': 'ID da tarefa é obrigatório'})
 
     result = table.get_item(Key={'id': task_id})
     task = result.get('Item')
 
     if not task:
-        return response(404, {'error': 'Task not found'})
+        return response(404, {'error': 'Tarefa não encontrada'})
 
     return response(200, task)
 
 
 def update_task(task_id, event):
-    """Atualiza uma task"""
+    """Atualiza uma tarefa"""
     if not task_id:
-        return response(400, {'error': 'Task ID is required'})
+        return response(400, {'error': 'ID da tarefa é obrigatório'})
 
     body = json.loads(event.get('body', '{}'))
 
-    update_expr = 'SET updated_at = :updated_at'
+    now = datetime.utcnow().isoformat()
+    update_expr = 'SET atualizado_em = :atualizado_em'
     expr_values = {
-        ':updated_at': datetime.utcnow().isoformat()
+        ':atualizado_em': now
     }
 
-    if 'title' in body:
-        update_expr += ', title = :title'
-        expr_values[':title'] = body['title']
+    if 'titulo' in body:
+        update_expr += ', titulo = :titulo'
+        expr_values[':titulo'] = body['titulo']
 
-    if 'description' in body:
-        update_expr += ', description = :description'
-        expr_values[':description'] = body['description']
+    if 'descricao' in body:
+        update_expr += ', descricao = :descricao'
+        expr_values[':descricao'] = body['descricao']
 
-    if 'completed' in body:
-        update_expr += ', completed = :completed'
-        expr_values[':completed'] = body['completed']
+    if 'concluida' in body:
+        update_expr += ', concluida = :concluida'
+        expr_values[':concluida'] = bool(body['concluida'])
 
     result = table.update_item(
         Key={'id': task_id},
@@ -123,9 +130,9 @@ def update_task(task_id, event):
 
 
 def delete_task(task_id):
-    """Deleta uma task"""
+    """Deleta uma tarefa"""
     if not task_id:
-        return response(400, {'error': 'Task ID is required'})
+        return response(400, {'error': 'ID da tarefa é obrigatório'})
 
     table.delete_item(Key={'id': task_id})
     return response(204, None)
