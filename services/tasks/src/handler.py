@@ -131,15 +131,18 @@ def update_task(task_id, event):
 
     update_expr_parts = []
     expr_values = {}
+    expr_names = {}
 
     # titulo e descricao podem ser alterados
     if 'titulo' in body:
-        update_expr_parts.append('titulo = :titulo')
+        update_expr_parts.append('#titulo = :titulo')
         expr_values[':titulo'] = body['titulo']
+        expr_names['#titulo'] = 'titulo'
 
     if 'descricao' in body:
-        update_expr_parts.append('descricao = :descricao')
+        update_expr_parts.append('#descricao = :descricao')
         expr_values[':descricao'] = body['descricao']
+        expr_names['#descricao'] = 'descricao'
 
     # status: valida e aplica regras de data_conclusao
     if 'status' in body:
@@ -148,18 +151,21 @@ def update_task(task_id, event):
             return response(400, {'error': 'Status inválido'})
 
         old_status = current.get('status')
-        update_expr_parts.append('status = :status')
+        update_expr_parts.append('#status = :status')
         expr_values[':status'] = new_status
+        expr_names['#status'] = 'status'
 
         hoje = datetime.utcnow().strftime('%d/%m/%Y')
         # transição para concluída
         if old_status != 'Concluída' and new_status == 'Concluída':
-            update_expr_parts.append('data_conclusao = :data_conclusao')
+            update_expr_parts.append('#data_conclusao = :data_conclusao')
             expr_values[':data_conclusao'] = hoje
+            expr_names['#data_conclusao'] = 'data_conclusao'
         # transição de concluída para outro status -> limpar data_conclusao
         if old_status == 'Concluída' and new_status != 'Concluída':
-            update_expr_parts.append('data_conclusao = :data_conclusao')
+            update_expr_parts.append('#data_conclusao = :data_conclusao')
             expr_values[':data_conclusao'] = ''
+            expr_names['#data_conclusao'] = 'data_conclusao'
 
     # criado_por e data_criacao não são permitidos no PUT (ignoramos se vierem)
 
@@ -168,12 +174,16 @@ def update_task(task_id, event):
 
     update_expr = 'SET ' + ', '.join(update_expr_parts)
 
-    result = table.update_item(
-        Key={'id': task_id},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_values,
-        ReturnValues='ALL_NEW'
-    )
+    params = {
+        'Key': {'id': task_id},
+        'UpdateExpression': update_expr,
+        'ExpressionAttributeValues': expr_values,
+        'ReturnValues': 'ALL_NEW'
+    }
+    if expr_names:
+        params['ExpressionAttributeNames'] = expr_names
+
+    result = table.update_item(**params)
 
     return response(200, result.get('Attributes'))
 
