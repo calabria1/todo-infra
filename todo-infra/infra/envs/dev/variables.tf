@@ -10,7 +10,7 @@ variable "env" {
 
 variable "aws_region" {
   type        = string
-  description = "Regiao AWS"
+  description = "Regiao AWSs"
 }
 
 variable "artifacts_bucket" {
