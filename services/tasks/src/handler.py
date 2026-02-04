@@ -39,7 +39,7 @@ def lambda_handler(event, context):
             if http_method == 'POST':
                 return create_task(event)
             if http_method == 'GET':
-                return list_tasks()
+                return list_tasks(event)
         elif path.startswith('/tarefas/'):
             task_id = path_params.get('id')
             if http_method == 'GET':
@@ -67,6 +67,7 @@ def create_task(event):
 
     task = {
         'id': str(uuid.uuid4()),
+        'pk': 'TASK',
         'titulo': titulo,
         'descricao': descricao,
         'status': status,
@@ -79,15 +80,57 @@ def create_task(event):
     return response(201, task)
 
 
-def list_tasks():
-    """Lista todas as tarefas"""
-    result = table.scan()
-    tarefas = result.get('Items', [])
+def list_tasks(event):
+    """Lista tarefas com suporte a filtros via GSI e paginação"""
+    params = event.get('queryStringParameters') or {}
+    # limit (default 100)
+    try:
+        limit = int(params.get('limit', '100')) if params.get('limit') else 100
+    except ValueError:
+        return response(400, {'error': 'limit inválido'})
 
-    return response(200, {
-        'tarefas': tarefas,
-        'total': len(tarefas)
-    })
+    exclusive_start_key = None
+    if 'exclusive_start_key' in params:
+        try:
+            exclusive_start_key = json.loads(params.get('exclusive_start_key'))
+        except Exception:
+            return response(400, {'error': 'exclusive_start_key inválido'})
+
+    # Query by status
+    if 'status' in params:
+        status = params['status']
+        result = table.query(
+            IndexName='status-index',
+            KeyConditionExpression=Key('status').eq(status),
+            Limit=limit,
+            ExclusiveStartKey=exclusive_start_key
+        )
+    elif 'criado_por' in params:
+        criado_por = params['criado_por']
+        result = table.query(
+            IndexName='criado_por-index',
+            KeyConditionExpression=Key('criado_por').eq(criado_por),
+            Limit=limit,
+            ExclusiveStartKey=exclusive_start_key,
+            ScanIndexForward=False
+        )
+    else:
+        # default: return recent tasks via all_tasks-index (avoid full table scan)
+        result = table.query(
+            IndexName='all_tasks-index',
+            KeyConditionExpression=Key('pk').eq('TASK'),
+            Limit=limit,
+            ExclusiveStartKey=exclusive_start_key,
+            ScanIndexForward=False
+        )
+
+    tarefas = result.get('Items', [])
+    last_key = result.get('LastEvaluatedKey')
+    body = {'tarefas': tarefas, 'total': len(tarefas)}
+    if last_key:
+        body['last_evaluated_key'] = last_key
+
+    return response(200, body)
 
 
 def get_task(task_id):

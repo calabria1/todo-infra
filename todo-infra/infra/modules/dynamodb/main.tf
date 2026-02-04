@@ -8,6 +8,47 @@ resource "aws_dynamodb_table" "this" {
     type = "S"
   }
 
+  attribute {
+    name = "criado_por"
+    type = "S"
+  }
+
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "data_criacao"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "criado_por-index"
+    hash_key        = "criado_por"
+    range_key       = "data_criacao"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "status-index"
+    hash_key        = "status"
+    range_key       = "data_criacao"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "all_tasks-index"
+    hash_key        = "pk"
+    range_key       = "data_criacao"
+    projection_type = "ALL"
+  }
+
   point_in_time_recovery { enabled = true }
 
   tags = var.tags
