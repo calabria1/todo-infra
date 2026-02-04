@@ -33,7 +33,7 @@ resource "aws_apigatewayv2_route" "routes" {
 }
 
 resource "aws_apigatewayv2_stage" "default" {
-  api_id      = aws_apigatewayv2_api.api.id
+  api_id      = aws_apigatewayv2_api.this.id
   name        = "$default"
   auto_deploy = true
 }
