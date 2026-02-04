@@ -53,7 +53,7 @@ def lambda_handler(event, context):
             return delete_task(path_params.get('id'))
 
         else:
-            return response(404, {'error': 'Não encontrado'})
+            return response(404, {'error': 'Nãao encontrado'})
 
     except Exception as e:
         print(f"Error: {str(e)}")
