@@ -93,7 +93,8 @@ resource "aws_apigatewayv2_api" "api" {
 resource "aws_apigatewayv2_integration" "lambda" {
   api_id             = aws_apigatewayv2_api.api.id
   integration_type   = "AWS_PROXY"
-  integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.tarefas.arn}/invocations"  payload_format_version = "2.0"
+  integration_uri    = aws_lambda_function.tarefas.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_route" "tarefas" {
