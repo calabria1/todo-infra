@@ -11,6 +11,20 @@ from datetime import datetime
 import boto3
 from boto3.dynamodb.conditions import Key
 
+
+def normalize_status(s):
+    
+    if s is None:
+        return None
+    s_norm = str(s).strip().lower()
+    if s_norm in ['pendente', 'pending', 'pend']:
+        return 'Pendente'
+    if s_norm in ['em andamento', 'em-andamento', 'em_andamento', 'em-andamento', 'em andamento', 'emandamento']:
+        return 'Em andamento'
+    if s_norm in ['concluida', 'concluída', 'concluido', 'concluído', 'concl', 'feito', 'concluido']:
+        return 'Concluída'
+    return None
+
 # Inicializa cliente DynamoDB
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ.get('TABLE_NAME', 'todo-dev-tasks'))
@@ -47,15 +61,22 @@ def lambda_handler(event, context):
 
 
 def create_task(event):
-    """Cria uma nova tarefa a partir do payload esperado em PT"""
+    
     body = json.loads(event.get('body', '{}'))
 
     titulo = body.get('titulo', 'Sem título')
     descricao = body.get('descricao', '')
-    status = body.get('status', 'Pendente')
     criado_por = body.get('criado_por', '')
-    data_criacao = body.get('data_criacao') or datetime.utcnow().strftime('%d/%m/%Y')
-    data_conclusao = body.get('data_conclusao', '')
+
+    # Status normalizado; se inválido -> Pendente
+    status = normalize_status(body.get('status')) or 'Pendente'
+
+    # data_criacao é gerada pelo servidor
+    hoje = datetime.utcnow().strftime('%d/%m/%Y')
+    data_criacao = hoje
+
+    # data_conclusao só se status for Concluída
+    data_conclusao = hoje if status == 'Concluída' else ''
 
     task = {
         'id': str(uuid.uuid4()),
@@ -97,15 +118,21 @@ def get_task(task_id):
 
 
 def update_task(task_id, event):
-    """Atualiza uma tarefa a partir do payload em PT"""
+    
     if not task_id:
         return response(400, {'error': 'ID da tarefa é obrigatório'})
 
     body = json.loads(event.get('body', '{}'))
 
+    # Buscar item atual para regras de transição
+    current = table.get_item(Key={'id': task_id}).get('Item')
+    if not current:
+        return response(404, {'error': 'Tarefa não encontrada'})
+
     update_expr_parts = []
     expr_values = {}
 
+    # titulo e descricao podem ser alterados
     if 'titulo' in body:
         update_expr_parts.append('titulo = :titulo')
         expr_values[':titulo'] = body['titulo']
@@ -114,24 +141,30 @@ def update_task(task_id, event):
         update_expr_parts.append('descricao = :descricao')
         expr_values[':descricao'] = body['descricao']
 
+    # status: valida e aplica regras de data_conclusao
     if 'status' in body:
+        new_status = normalize_status(body.get('status'))
+        if new_status is None:
+            return response(400, {'error': 'Status inválido'})
+
+        old_status = current.get('status')
         update_expr_parts.append('status = :status')
-        expr_values[':status'] = body['status']
+        expr_values[':status'] = new_status
 
-    if 'criado_por' in body:
-        update_expr_parts.append('criado_por = :criado_por')
-        expr_values[':criado_por'] = body['criado_por']
+        hoje = datetime.utcnow().strftime('%d/%m/%Y')
+        # transição para concluída
+        if old_status != 'Concluída' and new_status == 'Concluída':
+            update_expr_parts.append('data_conclusao = :data_conclusao')
+            expr_values[':data_conclusao'] = hoje
+        # transição de concluída para outro status -> limpar data_conclusao
+        if old_status == 'Concluída' and new_status != 'Concluída':
+            update_expr_parts.append('data_conclusao = :data_conclusao')
+            expr_values[':data_conclusao'] = ''
 
-    if 'data_criacao' in body:
-        update_expr_parts.append('data_criacao = :data_criacao')
-        expr_values[':data_criacao'] = body['data_criacao']
-
-    if 'data_conclusao' in body:
-        update_expr_parts.append('data_conclusao = :data_conclusao')
-        expr_values[':data_conclusao'] = body['data_conclusao']
+    # criado_por e data_criacao não são permitidos no PUT (ignoramos se vierem)
 
     if not update_expr_parts:
-        return response(400, {'error': 'Nenhum campo para atualizar'})
+        return response(400, {'error': 'Nenhum campo permitido para atualizar'})
 
     update_expr = 'SET ' + ', '.join(update_expr_parts)
 
