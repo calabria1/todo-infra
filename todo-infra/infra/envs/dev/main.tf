@@ -87,7 +87,8 @@ data "aws_iam_policy_document" "lambda_policy" {
       "dynamodb:GetItem",
       "dynamodb:UpdateItem",
       "dynamodb:DeleteItem",
-      "dynamodb:Query"
+      "dynamodb:Query",
+      "dynamodb:Scan"
     ]
     resources = [
       aws_dynamodb_table.tarefas.arn,
