@@ -34,6 +34,9 @@ def lambda_handler(event, context):
     path = event.get('rawPath', '/')
     path_params = event.get('pathParameters') or {}
 
+    # Normalize trailing slash so '/tarefas/' resolves to listing (not to item-by-id)
+    path = path.rstrip('/')
+
     try:
         if path == '/tarefas':
             if http_method == 'POST':
@@ -42,6 +45,8 @@ def lambda_handler(event, context):
                 return list_tasks(event)
         elif path.startswith('/tarefas/'):
             task_id = path_params.get('id')
+            if not task_id:
+                return response(400, {'error': 'ID da tarefa é obrigatório'})
             if http_method == 'GET':
                 return get_task(task_id)
             if http_method == 'PUT':
