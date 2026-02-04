@@ -1,21 +1,24 @@
-variable "aws_region" { type = string }
+variable "project" {
+  type        = string
+  description = "Nome do projeto"
+}
 
-variable "artifacts_bucket" { type = string }
+variable "env" {
+  type        = string
+  description = "Ambiente (dev, hom, prod)"
+}
 
-variable "lambda_artifact_version" { type = string }
+variable "aws_region" {
+  type        = string
+  description = "Regiao AWS"
+}
 
-variable "api_name" { type = string }
+variable "artifacts_bucket" {
+  type        = string
+  description = "Bucket S3 para artefatos (zip da lambda) - JA EXISTE"
+}
 
-variable "lambda_function_name" { type = string }
-
-variable "dynamodb_table_name" { type = string }
-
-variable "iam_role_name" { type = string }
-
-variable "iam_policy_name" { type = string }
-
-variable "log_group_name" { type = string }
-
-variable "project" { type = string }
-
-variable "env" { type = string }
+variable "lambda_artifact_version" {
+  type        = string
+  description = "Versao do artefato da Lambda (ex: latest ou sha curta)"
+}
