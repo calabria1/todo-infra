@@ -43,7 +43,9 @@ Esta seção explica o fluxo para desenvolvimento local utilizando DynamoDB Loca
 
 ### 2. Rodar o DynamoDB Local
 
-Baixe a versão executável na documentação oficial da AWS. Extraia e execute no terminal:
+Baixe a versão executável na documentação oficial da AWS. https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#DynamoDBLocal.DownloadingAndRunning.title
+
+ Extraia e execute no terminal:
 
 ```powershell
 cd C:\caminho\para\diretorio_extraido
