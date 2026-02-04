@@ -18,7 +18,7 @@ Provisiona a infra inteira na AWS:
 ## Como usar
 1) Configure os **Secrets** no GitHub (Actions):
 - `AWS_ROLE_ARN`
-- `AWS_REGION`
+- `AWS_REGIOsN`
 
 2) Ajuste `infra/envs/dev/terraform.tfvars` (bucket/state/nomes)
 
